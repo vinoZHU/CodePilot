@@ -17,9 +17,11 @@ export interface SkillItem {
   name: string;
   description: string;
   content: string;
-  source: "global" | "project" | "plugin" | "installed";
+  source: "global" | "project" | "plugin" | "installed" | "agent";
   installedSource?: "agents" | "claude";
   filePath: string;
+  /** Only set for source="agent": which plugin this agent belongs to */
+  pluginId?: string;
 }
 
 interface SkillListItemProps {

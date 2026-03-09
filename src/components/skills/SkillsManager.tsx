@@ -33,7 +33,8 @@ export function SkillsManager() {
       const res = await fetch(`/api/skills${cwdParam}`);
       if (res.ok) {
         const data = await res.json();
-        setSkills((data.skills || []).filter((s: SkillItem) => s.source !== "project"));
+        // Include all skills (global, project, installed, plugin, agent)
+        setSkills(data.skills || []);
       }
     } catch {
       // ignore
@@ -137,8 +138,10 @@ export function SkillsManager() {
   );
 
   const globalSkills = filtered.filter((s) => s.source === "global");
+  const projectSkills = filtered.filter((s) => s.source === "project");
   const installedSkills = filtered.filter((s) => s.source === "installed");
   const pluginSkills = filtered.filter((s) => s.source === "plugin");
+  const agentSkills = filtered.filter((s) => s.source === "agent");
 
   if (loading) {
     return (
@@ -213,7 +216,7 @@ export function SkillsManager() {
               {globalSkills.length > 0 && (
                 <div className="mb-1">
                   <span className="px-3 py-1 text-[10px] font-medium uppercase text-muted-foreground">
-                    Global
+                    {t('skills.global')}
                   </span>
                   {globalSkills.map((skill) => (
                     <SkillListItem
@@ -230,10 +233,30 @@ export function SkillsManager() {
                   ))}
                 </div>
               )}
+              {projectSkills.length > 0 && (
+                <div className="mb-1">
+                  <span className="px-3 py-1 text-[10px] font-medium uppercase text-muted-foreground">
+                    {t('skills.project')}
+                  </span>
+                  {projectSkills.map((skill) => (
+                    <SkillListItem
+                      key={skill.filePath || `${skill.source}:${skill.name}`}
+                      skill={skill}
+                      selected={
+                        selected?.name === skill.name &&
+                        selected?.source === skill.source &&
+                        selected?.installedSource === skill.installedSource
+                      }
+                      onSelect={() => setSelected(skill)}
+                      onDelete={handleDelete}
+                    />
+                  ))}
+                </div>
+              )}
               {installedSkills.length > 0 && (
                 <div className="mb-1">
                   <span className="px-3 py-1 text-[10px] font-medium uppercase text-muted-foreground">
-                    Installed
+                    {t('skills.installed')}
                   </span>
                   {installedSkills.map((skill) => (
                     <SkillListItem
@@ -263,6 +286,26 @@ export function SkillsManager() {
                         selected?.name === skill.name &&
                         selected?.source === skill.source &&
                         selected?.installedSource === skill.installedSource
+                      }
+                      onSelect={() => setSelected(skill)}
+                      onDelete={handleDelete}
+                    />
+                  ))}
+                </div>
+              )}
+              {agentSkills.length > 0 && (
+                <div className="mb-1">
+                  <span className="px-3 py-1 text-[10px] font-medium uppercase text-muted-foreground">
+                    {t('skills.agents')}
+                  </span>
+                  {agentSkills.map((skill) => (
+                    <SkillListItem
+                      key={skill.filePath || `${skill.source}:${skill.name}`}
+                      skill={skill}
+                      selected={
+                        selected?.name === skill.name &&
+                        selected?.source === skill.source &&
+                        selected?.filePath === skill.filePath
                       }
                       onSelect={() => setSelected(skill)}
                       onDelete={handleDelete}

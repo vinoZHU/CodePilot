@@ -38,7 +38,7 @@ function computeContentHash(content: string): string {
 
 /**
  * Parse YAML front matter from SKILL.md content.
- * Extracts `name` and `description` fields from the --- delimited block.
+ * Extracts `name` (or `skill:` as legacy alias) and `description` fields.
  */
 function parseSkillFrontMatter(content: string): { name?: string; description?: string } {
   const fmMatch = content.match(/^---\r?\n([\s\S]+?)\r?\n---/);
@@ -51,7 +51,8 @@ function parseSkillFrontMatter(content: string): { name?: string; description?: 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    const nameMatch = line.match(/^name:\s*(.+)/);
+    // Match name: value  OR  skill: value (legacy alias)
+    const nameMatch = line.match(/^(?:name|skill):\s*(.+)/);
     if (nameMatch) {
       result.name = nameMatch[1].trim();
       continue;

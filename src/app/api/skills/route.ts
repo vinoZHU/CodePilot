@@ -8,9 +8,11 @@ interface SkillFile {
   name: string;
   description: string;
   content: string;
-  source: "global" | "project" | "plugin" | "installed";
+  source: "global" | "project" | "plugin" | "installed" | "agent";
   installedSource?: "agents" | "claude";
   filePath: string;
+  /** Only set for source="agent": which plugin this agent belongs to */
+  pluginId?: string;
 }
 
 type InstalledSource = "agents" | "claude";
@@ -28,29 +30,76 @@ function getProjectSkillsDir(cwd?: string): string {
   return path.join(cwd || process.cwd(), ".claude", "skills");
 }
 
-function getPluginCommandsDirs(): string[] {
-  const dirs: string[] = [];
-  const marketplacesDir = path.join(os.homedir(), ".claude", "plugins", "marketplaces");
-  if (!fs.existsSync(marketplacesDir)) return dirs;
+interface PluginScanTarget {
+  dir: string;
+  /** "skills" → {name}/SKILL.md 格式，用 scanProjectSkills；"commands" → 平铺 .md，用 scanDirectory */
+  scanType: "skills" | "commands";
+  /** Plugin identifier (key from installed_plugins.json) for agent attribution */
+  pluginId?: string;
+}
 
+/**
+ * 收集所有已安装插件需要扫描的目录。
+ *
+ * 主路径：读取 installed_plugins.json 获取各插件的 installPath（缓存目录），
+ * 对每个 installPath 同时尝试 skills/ 和 commands/ 两个子目录。
+ *
+ * 回退路径：若 installed_plugins.json 不存在，改为遍历
+ * ~/.claude/plugins/marketplaces/{marketplace}/plugins/{plugin}/
+ * 同样扫 skills/ 和 commands/。
+ */
+function getPluginScanTargets(): PluginScanTarget[] {
+  const targets: PluginScanTarget[] = [];
+
+  function addTargetsFromPluginRoot(pluginRoot: string, pluginId?: string) {
+    const skillsDir = path.join(pluginRoot, "skills");
+    if (fs.existsSync(skillsDir)) {
+      targets.push({ dir: skillsDir, scanType: "skills", pluginId });
+    }
+    const commandsDir = path.join(pluginRoot, "commands");
+    if (fs.existsSync(commandsDir)) {
+      targets.push({ dir: commandsDir, scanType: "commands", pluginId });
+    }
+  }
+
+  const installedPluginsPath = path.join(
+    os.homedir(), ".claude", "plugins", "installed_plugins.json"
+  );
+
+  if (fs.existsSync(installedPluginsPath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(installedPluginsPath, "utf-8"));
+      const plugins = data.plugins as Record<string, Array<{ installPath?: string }>> || {};
+      for (const [pluginKey, entries] of Object.entries(plugins)) {
+        if (!Array.isArray(entries)) continue;
+        // 取第一条（最新安装记录）
+        const installPath = entries[0]?.installPath;
+        if (!installPath || typeof installPath !== "string") continue;
+        if (!fs.existsSync(installPath)) continue;
+        addTargetsFromPluginRoot(installPath, pluginKey);
+      }
+      return targets;
+    } catch {
+      // 解析失败，继续走回退逻辑
+    }
+  }
+
+  // 回退：直接遍历 marketplaces 目录
+  const marketplacesDir = path.join(os.homedir(), ".claude", "plugins", "marketplaces");
+  if (!fs.existsSync(marketplacesDir)) return targets;
   try {
-    // Scan marketplaces -> each marketplace -> plugins -> each plugin -> commands
     const marketplaces = fs.readdirSync(marketplacesDir);
     for (const marketplace of marketplaces) {
       const pluginsDir = path.join(marketplacesDir, marketplace, "plugins");
       if (!fs.existsSync(pluginsDir)) continue;
-      const plugins = fs.readdirSync(pluginsDir);
-      for (const plugin of plugins) {
-        const commandsDir = path.join(pluginsDir, plugin, "commands");
-        if (fs.existsSync(commandsDir)) {
-          dirs.push(commandsDir);
-        }
+      for (const plugin of fs.readdirSync(pluginsDir)) {
+        addTargetsFromPluginRoot(path.join(pluginsDir, plugin));
       }
     }
   } catch {
     // ignore
   }
-  return dirs;
+  return targets;
 }
 
 function getInstalledSkillsDir(): string {
@@ -59,6 +108,53 @@ function getInstalledSkillsDir(): string {
 
 function getClaudeSkillsDir(): string {
   return path.join(os.homedir(), ".claude", "skills");
+}
+
+/**
+ * Parse YAML front matter from an agent .md file.
+ * Agent front matter uses `name:` and `description:` (may be multi-line block scalar `|`).
+ */
+function parseAgentFrontMatter(content: string): { name?: string; description?: string } {
+  return parseSkillFrontMatter(content); // Reuse same parser — identical format
+}
+
+/**
+ * Scan a plugin's `agents/` directory for sub-agent .md files.
+ * Each agent file has YAML front matter with name and description.
+ */
+function scanPluginAgents(agentsDir: string, pluginId: string): SkillFile[] {
+  const agents: SkillFile[] = [];
+  if (!fs.existsSync(agentsDir)) return agents;
+  try {
+    const entries = fs.readdirSync(agentsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+      const filePath = path.join(agentsDir, entry.name);
+      const content = fs.readFileSync(filePath, "utf-8");
+      const meta = parseAgentFrontMatter(content);
+      const name = meta.name || entry.name.replace(/\.md$/, "");
+      // description may be multi-line in the front matter; fall back to first non-front-matter line
+      let description = meta.description;
+      if (!description) {
+        const bodyMatch = content.match(/^---[\s\S]+?---\r?\n([\s\S]+)/);
+        const firstBodyLine = bodyMatch?.[1]?.split("\n")[0]?.trim() || "";
+        description = firstBodyLine.startsWith("#")
+          ? firstBodyLine.replace(/^#+\s*/, "")
+          : firstBodyLine || `Agent: ${name}`;
+      }
+      agents.push({
+        name,
+        description,
+        content,
+        source: "agent",
+        filePath,
+        pluginId,
+      });
+    }
+  } catch {
+    // ignore read errors
+  }
+  return agents;
 }
 
 /**
@@ -101,7 +197,7 @@ function computeContentHash(content: string): string {
 
 /**
  * Parse YAML front matter from SKILL.md content.
- * Extracts `name` and `description` fields from the --- delimited block.
+ * Extracts `name` (or `skill:` as alias) and `description` fields from the --- delimited block.
  */
 function parseSkillFrontMatter(content: string): { name?: string; description?: string } {
   // Extract front matter between --- delimiters
@@ -115,8 +211,8 @@ function parseSkillFrontMatter(content: string): { name?: string; description?: 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Match name: value
-    const nameMatch = line.match(/^name:\s*(.+)/);
+    // Match name: value  OR  skill: value (legacy alias)
+    const nameMatch = line.match(/^(?:name|skill):\s*(.+)/);
     if (nameMatch) {
       result.name = nameMatch[1].trim();
       continue;
@@ -311,14 +407,66 @@ export async function GET(request: NextRequest) {
       preferredInstalledSource
     );
 
-    // Scan installed plugin skills
+    // Scan installed plugin skills（同时支持 skills/SKILL.md 和 commands/*.md 两种格式）
+    // AND sub-agents from plugins' agents/ directories
+    const pluginScanTargets = getPluginScanTargets();
+    console.log(`[skills] Plugin scan targets: ${pluginScanTargets.length}`, pluginScanTargets.map(t => `${t.scanType}:${t.dir}`));
     const pluginSkills: SkillFile[] = [];
-    for (const dir of getPluginCommandsDirs()) {
-      pluginSkills.push(...scanDirectory(dir, "plugin"));
+    const pluginAgents: SkillFile[] = [];
+
+    for (const target of pluginScanTargets) {
+      if (target.scanType === "skills") {
+        // SKILL.md 格式 → 用 scanProjectSkills，再把 source 改为 plugin
+        const found = scanProjectSkills(target.dir).map(s => ({ ...s, source: "plugin" as const }));
+        pluginSkills.push(...found);
+      } else {
+        // 平铺 .md 格式 → 用 scanDirectory
+        pluginSkills.push(...scanDirectory(target.dir, "plugin"));
+      }
+
+      // Also scan agents/ sibling directory (same plugin root)
+      if (target.pluginId) {
+        const pluginRoot = path.dirname(target.dir);
+        const agentsDir = path.join(pluginRoot, "agents");
+        if (fs.existsSync(agentsDir)) {
+          const agents = scanPluginAgents(agentsDir, target.pluginId);
+          // Avoid duplicates (same plugin root may yield multiple targets)
+          for (const agent of agents) {
+            if (!pluginAgents.some(a => a.filePath === agent.filePath)) {
+              pluginAgents.push(agent);
+            }
+          }
+        }
+      }
     }
 
-    const all = [...globalSkills, ...projectSkills, ...dedupedProjectSkills, ...installedSkills, ...pluginSkills];
-    console.log(`[skills] Found: global=${globalSkills.length}, project=${projectSkills.length}, projectSkills=${dedupedProjectSkills.length}, installed=${installedSkills.length}, plugin=${pluginSkills.length}`);
+    // If no pluginId-aware targets were produced (fallback path), scan agents from installPaths directly
+    if (pluginScanTargets.every(t => !t.pluginId)) {
+      const installedPluginsPath2 = path.join(os.homedir(), ".claude", "plugins", "installed_plugins.json");
+      if (fs.existsSync(installedPluginsPath2)) {
+        try {
+          const data2 = JSON.parse(fs.readFileSync(installedPluginsPath2, "utf-8"));
+          const plugins2 = data2.plugins as Record<string, Array<{ installPath?: string }>> || {};
+          for (const [pluginKey, entries] of Object.entries(plugins2)) {
+            if (!Array.isArray(entries)) continue;
+            const installPath = entries[0]?.installPath;
+            if (!installPath || !fs.existsSync(installPath)) continue;
+            const agentsDir = path.join(installPath, "agents");
+            const agents = scanPluginAgents(agentsDir, pluginKey);
+            for (const agent of agents) {
+              if (!pluginAgents.some(a => a.filePath === agent.filePath)) {
+                pluginAgents.push(agent);
+              }
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    const all = [...globalSkills, ...projectSkills, ...dedupedProjectSkills, ...installedSkills, ...pluginSkills, ...pluginAgents];
+    console.log(`[skills] Found: global=${globalSkills.length}, project=${projectSkills.length}, projectSkills=${dedupedProjectSkills.length}, installed=${installedSkills.length}, plugin=${pluginSkills.length}, agents=${pluginAgents.length}`);
 
     // Merge SDK slash commands if available
     try {

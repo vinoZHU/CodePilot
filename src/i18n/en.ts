@@ -177,6 +177,7 @@ const en = {
   'extensions.title': 'Extensions',
   'extensions.skills': 'Skills',
   'extensions.mcpServers': 'MCP Servers',
+  'extensions.plugins': 'Plugins',
 
   // ── Skills ──────────────────────────────────────────────────
   'skills.noSelected': 'No skill selected',
@@ -192,6 +193,7 @@ const en = {
   'skills.scope': 'Scope',
   'skills.global': 'Global',
   'skills.project': 'Project',
+  'skills.agents': 'Sub-Agents',
   'skills.template': 'Template',
   'skills.blank': 'Blank',
   'skills.commitHelper': 'Commit Helper',
@@ -221,7 +223,34 @@ const en = {
   'skills.marketplaceHintDesc': 'Search and install community skills from Skills.sh',
   'skills.noReadme': 'No description available for this skill',
 
-  // ── MCP ─────────────────────────────────────────────────────
+  // ── Plugins ─────────────────────────────────────────────────
+  'plugins.title': 'Plugins',
+  'plugins.loading': 'Loading plugins...',
+  'plugins.noPlugins': 'No plugins installed',
+  'plugins.noPluginsDesc': 'Install plugins from the Claude Code marketplace to add skills, commands, and agents.',
+  'plugins.noSelected': 'No plugin selected',
+  'plugins.selectHint': 'Select a plugin to view its details and resources',
+  'plugins.searchPlugins': 'Search plugins...',
+  'plugins.version': 'Version',
+  'plugins.author': 'Author',
+  'plugins.license': 'License',
+  'plugins.installedAt': 'Installed',
+  'plugins.updatedAt': 'Updated',
+  'plugins.scope': 'Scope',
+  'plugins.installPath': 'Install Path',
+  'plugins.notFound': 'Install path not found on disk',
+  'plugins.keywords': 'Keywords',
+  'plugins.resources': 'Resources',
+  'plugins.noResources': 'No skills, commands, or agents found in this plugin',
+  'plugins.skills': 'Skills',
+  'plugins.commands': 'Commands',
+  'plugins.agents': 'Sub-Agents',
+  'plugins.mcp': 'MCP Config',
+  'plugins.hasMcp': 'This plugin ships an MCP server configuration',
+  'plugins.resourceCount': '{count} resource',
+  'plugins.resourceCountPlural': '{count} resources',
+
+
   'mcp.addServer': 'Add Server',
   'mcp.loadingServers': 'Loading MCP servers...',
   'mcp.serverConfig': 'MCP Server Configuration',

@@ -12,6 +12,7 @@ import {
   Edit02Icon,
   GlobeIcon,
   FolderOpenIcon,
+  Download04Icon,
   Loading02Icon,
   LayoutTwoColumnIcon,
 } from "@hugeicons/core-free-icons";
@@ -44,6 +45,8 @@ export function SkillEditor({ skill, onSave, onDelete }: SkillEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isDirty = content !== skill.content;
+  /** Plugin and agent skills are managed by their plugin — treat as read-only */
+  const isReadOnly = skill.source === "plugin" || skill.source === "agent";
 
   // Reset content when skill changes
   useEffect(() => {
@@ -127,13 +130,15 @@ export function SkillEditor({ skill, onSave, onDelete }: SkillEditorProps) {
                   ? "border-orange-500/40 text-orange-600 dark:text-orange-400"
                   : skill.source === "plugin"
                     ? "border-indigo-500/40 text-indigo-600 dark:text-indigo-400"
-                    : "border-blue-500/40 text-blue-600 dark:text-blue-400"
+                    : skill.source === "agent"
+                      ? "border-blue-500/40 text-blue-600 dark:text-blue-400"
+                      : "border-muted-foreground/40 text-muted-foreground"
             )}
           >
             {skill.source === "global" ? (
               <HugeiconsIcon icon={GlobeIcon} className="h-2.5 w-2.5 mr-0.5" />
             ) : skill.source === "installed" ? (
-              <HugeiconsIcon icon={FolderOpenIcon} className="h-2.5 w-2.5 mr-0.5" />
+              <HugeiconsIcon icon={Download04Icon} className="h-2.5 w-2.5 mr-0.5" />
             ) : (
               <HugeiconsIcon icon={FolderOpenIcon} className="h-2.5 w-2.5 mr-0.5" />
             )}
@@ -184,29 +189,33 @@ export function SkillEditor({ skill, onSave, onDelete }: SkillEditorProps) {
 
           <div className="w-px h-4 bg-border mx-1" />
 
-          {/* Save */}
-          <Button
-            size="xs"
-            onClick={handleSave}
-            disabled={!isDirty || saving}
-            className="gap-1"
-          >
-            {saving ? (
-              <HugeiconsIcon icon={Loading02Icon} className="h-3 w-3 animate-spin" />
-            ) : (
-              <HugeiconsIcon icon={FloppyDiskIcon} className="h-3 w-3" />
-            )}
-            {saving ? "Saving" : saved ? t('skills.saved') : t('skills.save')}
-          </Button>
+          {/* Save - hidden for read-only sources */}
+          {!isReadOnly && (
+            <Button
+              size="xs"
+              onClick={handleSave}
+              disabled={!isDirty || saving}
+              className="gap-1"
+            >
+              {saving ? (
+                <HugeiconsIcon icon={Loading02Icon} className="h-3 w-3 animate-spin" />
+              ) : (
+                <HugeiconsIcon icon={FloppyDiskIcon} className="h-3 w-3" />
+              )}
+              {saving ? "Saving" : saved ? t('skills.saved') : t('skills.save')}
+            </Button>
+          )}
 
-          {/* Delete */}
-          <Button
-            variant={confirmDelete ? "destructive" : "ghost"}
-            size="icon-xs"
-            onClick={handleDelete}
-          >
-            <HugeiconsIcon icon={Delete02Icon} className="h-3 w-3" />
-          </Button>
+          {/* Delete - hidden for plugin/agent sources */}
+          {!isReadOnly && (
+            <Button
+              variant={confirmDelete ? "destructive" : "ghost"}
+              size="icon-xs"
+              onClick={handleDelete}
+            >
+              <HugeiconsIcon icon={Delete02Icon} className="h-3 w-3" />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -216,9 +225,13 @@ export function SkillEditor({ skill, onSave, onDelete }: SkillEditorProps) {
           <Textarea
             ref={textareaRef}
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={(e) => !isReadOnly && setContent(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="h-full w-full resize-none rounded-none border-0 font-mono text-sm focus-visible:ring-0 focus-visible:ring-offset-0 min-h-[400px]"
+            readOnly={isReadOnly}
+            className={cn(
+              "h-full w-full resize-none rounded-none border-0 font-mono text-sm focus-visible:ring-0 focus-visible:ring-offset-0 min-h-[400px]",
+              isReadOnly && "bg-muted/30 cursor-default"
+            )}
             placeholder={t('skills.placeholder')}
           />
         )}

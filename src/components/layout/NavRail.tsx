@@ -9,6 +9,7 @@ import {
   Message02Icon,
   ZapIcon,
   Plug01Icon,
+  Package01Icon,
   Image01Icon,
   Settings02Icon,
   Wifi01Icon,
@@ -37,6 +38,7 @@ interface NavRailProps {
 const navItems = [
   { href: "/chat", label: "Chats", icon: Message02Icon },
   { href: "/skills", label: "Skills", icon: ZapIcon },
+  { href: "/plugins", label: "Plugins", icon: Package01Icon },
   { href: "/mcp", label: "MCP", icon: Plug01Icon },
   { href: "/gallery", label: "Gallery", icon: Image01Icon },
   { href: "/bridge", label: "Bridge", icon: Wifi01Icon },
@@ -51,6 +53,7 @@ export function NavRail({ onToggleChatList, hasUpdate, readyToInstall, skipPermi
   const navLabelKeys: Record<string, TranslationKey> = {
     'Chats': 'nav.chats',
     'Skills': 'extensions.skills',
+    'Plugins': 'extensions.plugins',
     'MCP': 'extensions.mcpServers',
     'Gallery': 'gallery.title',
     'Bridge': 'nav.bridge',
