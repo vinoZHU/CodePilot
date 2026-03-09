@@ -2,6 +2,7 @@
 
 import { createContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { type Locale, type TranslationKey, translate } from '@/i18n';
+import { setNotificationLocale } from '@/lib/notifications';
 
 interface I18nContextValue {
   locale: Locale;
@@ -28,6 +29,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
           const saved = data.settings?.locale;
           if (saved === 'en' || saved === 'zh') {
             setLocaleState(saved);
+            setNotificationLocale(saved);
           }
         }
       } catch {
@@ -39,6 +41,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const setLocale = useCallback((newLocale: Locale) => {
     setLocaleState(newLocale);
+    setNotificationLocale(newLocale);
     // Persist to app settings
     fetch('/api/settings/app', {
       method: 'PUT',

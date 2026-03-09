@@ -32,9 +32,13 @@ interface ChatViewProps {
   initialMode?: string;
   providerId?: string;
   initialPermissionProfile?: 'default' | 'full_access';
+  /** Session title for desktop notifications */
+  sessionTitle?: string;
+  /** Project/folder name for desktop notifications */
+  projectName?: string;
 }
 
-export function ChatView({ sessionId, initialMessages = [], initialHasMore = false, modelName, initialMode, providerId, initialPermissionProfile }: ChatViewProps) {
+export function ChatView({ sessionId, initialMessages = [], initialHasMore = false, modelName, initialMode, providerId, initialPermissionProfile, sessionTitle, projectName }: ChatViewProps) {
   const { setStreamingSessionId, workingDirectory, setWorkingDirectory, setPanelOpen, setPendingApprovalSessionId } = usePanel();
   const { t } = useTranslation();
   const router = useRouter();
@@ -309,6 +313,8 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
         providerId: currentProviderId,
         autoTrigger: true,
         thinking: buildThinkingConfig(),
+        sessionTitle,
+        projectName,
         onModeChanged: (sdkMode) => {
           const uiMode = sdkMode === 'plan' ? 'plan' : 'code';
           handleModeChange(uiMode);
@@ -541,6 +547,8 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
         pendingImageNotices: notices,
         effort: selectedEffort,
         thinking: buildThinkingConfig(),
+        sessionTitle,
+        projectName,
         onModeChanged: (sdkMode) => {
           const uiMode = sdkMode === 'plan' ? 'plan' : 'code';
           handleModeChange(uiMode);
@@ -550,7 +558,7 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
         },
       });
     },
-    [sessionId, isStreaming, mode, currentModel, currentProviderId, selectedEffort, buildThinkingConfig, handleModeChange]
+    [sessionId, isStreaming, mode, currentModel, currentProviderId, selectedEffort, buildThinkingConfig, handleModeChange, sessionTitle, projectName]
   );
 
   // Keep sendMessageRef in sync so timeout auto-retry can call it

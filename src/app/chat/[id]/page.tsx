@@ -241,7 +241,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           )}
         </div>
       )}
-      <ChatView key={id} sessionId={id} initialMessages={messages} initialHasMore={hasMore} modelName={sessionModel} initialMode={sessionMode} providerId={sessionProviderId} initialPermissionProfile={sessionPermissionProfile} />
+      <ChatView key={id} sessionId={id} initialMessages={messages} initialHasMore={hasMore} modelName={sessionModel} initialMode={sessionMode} providerId={sessionProviderId} initialPermissionProfile={sessionPermissionProfile} sessionTitle={sessionTitle} projectName={projectName} />
     </div>
   );
 }

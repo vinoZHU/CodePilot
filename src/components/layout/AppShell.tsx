@@ -66,7 +66,6 @@ function defaultViewMode(filePath: string): PreviewViewMode {
 
 const LG_BREAKPOINT = 1024;
 const CHECK_INTERVAL = 8 * 60 * 60 * 1000; // 8 hours
-const DISMISSED_VERSION_KEY = "codepilot_dismissed_update_version";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -400,13 +399,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             isNativeUpdate: true,
             lastError: null,
           }));
-          {
-            const ver = event.info?.version;
-            const dismissed = localStorage.getItem(DISMISSED_VERSION_KEY);
-            if (ver && dismissed !== ver) {
-              setShowDialog(true);
-            }
-          }
           break;
         case 'not-available':
           setUpdateInfo((prev) => prev ? { ...prev, updateAvailable: false, isNativeUpdate: true, lastError: null } : prev);
@@ -460,13 +452,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         lastError: null,
       };
       setUpdateInfo(info);
-
-      if (info.updateAvailable) {
-        const dismissed = localStorage.getItem(DISMISSED_VERSION_KEY);
-        if (dismissed !== info.latestVersion) {
-          setShowDialog(true);
-        }
-      }
     } catch {
       // silently ignore network errors
     } finally {

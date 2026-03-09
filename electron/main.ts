@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeImage, dialog, session, utilityProcess, ipcMain, shell, Tray, Menu } from 'electron';
+import { app, BrowserWindow, nativeImage, dialog, session, utilityProcess, ipcMain, shell, Tray, Menu, Notification } from 'electron';
 import path from 'path';
 import { execFileSync, spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
@@ -916,6 +916,19 @@ app.whenReady().then(async () => {
       properties: ['openDirectory', 'createDirectory'],
     });
     return { canceled: result.canceled, filePaths: result.filePaths };
+  });
+
+  // macOS system notification via Electron Notification API
+  ipcMain.handle('notification:show', (_event, title: string, body: string, subtitle?: string) => {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title, body, subtitle });
+    n.on('click', () => {
+      if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+    n.show();
   });
 
   try {

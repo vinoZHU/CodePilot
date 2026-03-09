@@ -858,6 +858,16 @@ const en = {
   'settings.email': 'Email',
   'settings.organization': 'Organization',
   'settings.subscription': 'Subscription',
+
+  // ── Desktop Notifications ─────────────────────────────────
+  'settings.desktopNotification': 'Desktop Notifications',
+  'settings.desktopNotificationDesc': 'Show system notifications for permission requests, completed responses, and errors',
+  'notification.type.permissionRequired': '⚠️ Permission Required',
+  'notification.type.completed': '✓ Response Complete',
+  'notification.type.error': '✗ Error Occurred',
+  'notification.permissionRequired.body': 'Waiting for approval to run: {tool}',
+  'notification.completed.body': 'Claude Code has finished responding',
+  'notification.error.body': 'Error: {error}',
 } as const;
 
 export type TranslationKey = keyof typeof en;

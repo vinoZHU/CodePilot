@@ -20,6 +20,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { SUPPORTED_LOCALES, type Locale } from "@/i18n";
 import type { TranslationKey } from "@/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { setNotificationEnabled } from "@/lib/notifications";
 
 function UpdateCard() {
   const { updateInfo, checking, checkForUpdates, downloadUpdate, quitAndInstall, setShowDialog } = useUpdate();
@@ -123,6 +124,7 @@ export function GeneralSection() {
   const [showSkipPermWarning, setShowSkipPermWarning] = useState(false);
   const [skipPermSaving, setSkipPermSaving] = useState(false);
   const [thinkingMode, setThinkingMode] = useState<string>('adaptive');
+  const [desktopNotifEnabled, setDesktopNotifEnabled] = useState(true);
   const [accountInfo, setAccountInfo] = useState<{ email?: string; organization?: string; subscriptionType?: string } | null>(null);
   const { t, locale, setLocale } = useTranslation();
 
@@ -136,6 +138,11 @@ export function GeneralSection() {
         if (appSettings.thinking_mode) {
           setThinkingMode(appSettings.thinking_mode);
         }
+        // desktop_notification_enabled defaults to true when not set
+        const notifVal = appSettings.desktop_notification_enabled;
+        const notifEnabled = notifVal !== 'false';
+        setDesktopNotifEnabled(notifEnabled);
+        setNotificationEnabled(notifEnabled);
       }
     } catch {
       // ignore
@@ -205,6 +212,22 @@ export function GeneralSection() {
     }
   };
 
+  const saveDesktopNotif = async (enabled: boolean) => {
+    setDesktopNotifEnabled(enabled);
+    setNotificationEnabled(enabled);
+    try {
+      await fetch("/api/settings/app", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settings: { desktop_notification_enabled: enabled ? "true" : "false" },
+        }),
+      });
+    } catch {
+      // ignore — state already updated optimistically
+    }
+  };
+
   return (
     <div className="max-w-3xl space-y-6">
       <UpdateCard />
@@ -249,6 +272,20 @@ export function GeneralSection() {
               ))}
             </SelectContent>
           </Select>
+        </div>
+      </div>
+
+      {/* Desktop notification toggle */}
+      <div className="rounded-lg border border-border/50 p-4 transition-shadow hover:shadow-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-medium">{t('settings.desktopNotification')}</h2>
+            <p className="text-xs text-muted-foreground">{t('settings.desktopNotificationDesc')}</p>
+          </div>
+          <Switch
+            checked={desktopNotifEnabled}
+            onCheckedChange={saveDesktopNotif}
+          />
         </div>
       </div>
 

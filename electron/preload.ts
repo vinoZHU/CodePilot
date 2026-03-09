@@ -28,4 +28,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   bridge: {
     isActive: () => ipcRenderer.invoke('bridge:is-active'),
   },
+  notify: (title: string, body: string, subtitle?: string) =>
+    ipcRenderer.invoke('notification:show', title, body, subtitle),
 });

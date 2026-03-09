@@ -12,6 +12,7 @@
 
 import { consumeSSEStream } from '@/hooks/useSSEStream';
 import { transferPendingToMessage } from '@/lib/image-ref-store';
+import { notifyPermissionRequired, notifyCompleted, notifyError } from '@/lib/notifications';
 import type {
   ToolUseInfo,
   ToolResultInfo,
@@ -43,6 +44,10 @@ interface ActiveStream {
   isIdleTimeout: boolean;
   sendMessageFn: ((content: string, files?: FileAttachment[]) => void) | null;
   rewindPoints: Array<{ userMessageId: string }>;
+  /** Session title for desktop notifications */
+  sessionTitle: string;
+  /** Project/folder name for desktop notifications */
+  projectName: string;
 }
 
 export interface StartStreamParams {
@@ -64,6 +69,10 @@ export interface StartStreamParams {
   effort?: string;
   /** SDK thinking config */
   thinking?: { type: string; budgetTokens?: number };
+  /** Session title shown in desktop notifications */
+  sessionTitle?: string;
+  /** Project/folder name shown in desktop notifications */
+  projectName?: string;
 }
 
 // ==========================================
@@ -193,6 +202,8 @@ export function startStream(params: StartStreamParams): void {
     isIdleTimeout: false,
     sendMessageFn: params.sendMessageFn ?? null,
     rewindPoints: [],
+    sessionTitle: params.sessionTitle ?? '',
+    projectName: params.projectName ?? '',
   };
 
   map.set(params.sessionId, stream);
@@ -316,6 +327,7 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
           pendingPermission: permData,
           permissionResolved: null,
         };
+        notifyPermissionRequired(permData.toolName ?? 'unknown', stream.sessionTitle, stream.projectName);
         emit(stream, 'permission-request');
       },
       onToolTimeout: (toolName, elapsedSeconds) => {
@@ -385,6 +397,9 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
     stream.toolOutputAccumulated = '';
 
     cleanupTimers(stream);
+    // Notify user that Claude Code finished responding (only when window is unfocused)
+    const preview = accumulated.trim().replace(/[#*`>_~]/g, '').slice(0, 80);
+    notifyCompleted(preview || undefined, stream.sessionTitle, stream.projectName);
     emit(stream, 'completed');
     scheduleGC(stream);
 
@@ -496,6 +511,8 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
       stream.toolUsesArray = [];
       stream.toolResultsArray = [];
       stream.toolOutputAccumulated = '';
+      // Notify user about the error (only when window is unfocused)
+      notifyError(errMsg, stream.sessionTitle, stream.projectName);
       emit(stream, 'completed');
       scheduleGC(stream);
     }

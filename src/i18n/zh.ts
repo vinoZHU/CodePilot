@@ -855,6 +855,16 @@ const zh: Record<TranslationKey, string> = {
   'settings.email': '邮箱',
   'settings.organization': '组织',
   'settings.subscription': '订阅类型',
+
+  // ── Desktop Notifications ─────────────────────────────────
+  'settings.desktopNotification': '桌面通知',
+  'settings.desktopNotificationDesc': '在需要权限确认、完成回复或发生错误时弹出系统通知',
+  'notification.type.permissionRequired': '⚠️ 需要权限确认',
+  'notification.type.completed': '✓ 回复完成',
+  'notification.type.error': '✗ 发生错误',
+  'notification.permissionRequired.body': '等待批准工具执行：{tool}',
+  'notification.completed.body': 'Claude Code 已完成回复',
+  'notification.error.body': '出错了：{error}',
 };
 
 export default zh;
