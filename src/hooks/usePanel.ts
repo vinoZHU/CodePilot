@@ -25,6 +25,8 @@ export interface PanelContextValue {
   activeStreamingSessions: Set<string>;
   /** All sessions with pending permission approval */
   pendingApprovalSessionIds: Set<string>;
+  /** Sessions that completed streaming while the user was viewing another session */
+  unreadCompletedSessionIds: Set<string>;
   previewFile: string | null;
   setPreviewFile: (path: string | null) => void;
   previewViewMode: PreviewViewMode;

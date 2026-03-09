@@ -127,12 +127,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // --- Multi-session stream tracking (driven by stream-session-manager) ---
   const [activeStreamingSessions, setActiveStreamingSessions] = useState<Set<string>>(EMPTY_SET);
   const [pendingApprovalSessionIds, setPendingApprovalSessionIds] = useState<Set<string>>(EMPTY_SET);
+  /** Sessions that completed while the user was viewing a different session (shown as blue in list) */
+  const [unreadCompletedSessionIds, setUnreadCompletedSessionIds] = useState<Set<string>>(EMPTY_SET);
+
+  // Ref to track previously-active sessions so we can detect completions
+  const prevActiveStreamingRef = useRef<Set<string>>(EMPTY_SET);
+  // Ref to always have the latest pathname without re-creating the event listener
+  const pathnameRef = useRef(pathname);
+  useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
 
   // Listen for global stream events from stream-session-manager
   useEffect(() => {
     const handler = () => {
       const activeIds = getActiveSessionIds();
-      setActiveStreamingSessions(activeIds.length > 0 ? new Set(activeIds) : EMPTY_SET);
+      const newActive = activeIds.length > 0 ? new Set(activeIds) : EMPTY_SET;
+
+      // Detect sessions that just finished (were active, now not)
+      const justCompleted: string[] = [];
+      for (const sid of prevActiveStreamingRef.current) {
+        if (!newActive.has(sid)) {
+          justCompleted.push(sid);
+        }
+      }
+      prevActiveStreamingRef.current = newActive;
+      setActiveStreamingSessions(newActive);
 
       const approvals = new Set<string>();
       for (const sid of activeIds) {
@@ -142,6 +160,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         }
       }
       setPendingApprovalSessionIds(approvals.size > 0 ? approvals : EMPTY_SET);
+
+      // Mark just-completed sessions as unread if:
+      // 1. User is in a different session, OR
+      // 2. The window is not focused (user switched to another app)
+      if (justCompleted.length > 0) {
+        const windowFocused = document.hasFocus();
+        setUnreadCompletedSessionIds((prev) => {
+          const next = new Set(prev);
+          let changed = false;
+          for (const sid of justCompleted) {
+            if (pathnameRef.current !== `/chat/${sid}` || !windowFocused) {
+              next.add(sid);
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      }
     };
     window.addEventListener('stream-session-event', handler);
     return () => window.removeEventListener('stream-session-event', handler);
@@ -149,6 +185,70 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // --- Split-screen state ---
   const [splitSessions, setSplitSessions] = useState<SplitSession[]>(() => loadSplitSessions());
+
+  // Clear unread status when the user navigates to a session
+  useEffect(() => {
+    const match = pathname.match(/^\/chat\/(.+)$/);
+    if (!match) return;
+    const viewedId = match[1];
+    setUnreadCompletedSessionIds((prev) => {
+      if (!prev.has(viewedId)) return prev;
+      const next = new Set(prev);
+      next.delete(viewedId);
+      return next.size > 0 ? next : EMPTY_SET;
+    });
+  }, [pathname]);
+
+  // Also clear unread for the current session when the window gains focus
+  // (covers the case where user was on session A, switched to another app,
+  //  session A completed and got marked unread, then user comes back to session A)
+  useEffect(() => {
+    const handleFocus = () => {
+      const match = pathnameRef.current.match(/^\/chat\/(.+)$/);
+      if (!match) return;
+      const currentId = match[1];
+      setUnreadCompletedSessionIds((prev) => {
+        if (!prev.has(currentId)) return prev;
+        const next = new Set(prev);
+        next.delete(currentId);
+        return next.size > 0 ? next : EMPTY_SET;
+      });
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  // Sync badge count (blue + amber sessions) to macOS Dock/tray via Electron IPC
+  useEffect(() => {
+    const count = new Set([...unreadCompletedSessionIds, ...pendingApprovalSessionIds]).size;
+    window.electronAPI?.updateBadge?.(count);
+  }, [unreadCompletedSessionIds, pendingApprovalSessionIds]);
+
+  // Sync legacy streamingSessionId with activeStreamingSessions:
+  // ChatView sets streamingSessionId when a stream starts, but if the user switches
+  // sessions before it completes, ChatView unmounts and never clears it.
+  // This effect catches that case and clears it when the stream finishes.
+  useEffect(() => {
+    if (streamingSessionId && !activeStreamingSessions.has(streamingSessionId)) {
+      setStreamingSessionId('');
+    }
+  }, [activeStreamingSessions, streamingSessionId]);
+
+  // Same issue for pendingApprovalSessionId — sync it with pendingApprovalSessionIds set.
+  useEffect(() => {
+    if (pendingApprovalSessionId && !pendingApprovalSessionIds.has(pendingApprovalSessionId)) {
+      setPendingApprovalSessionId('');
+    }
+  }, [pendingApprovalSessionIds, pendingApprovalSessionId]);
+
+  // Listen for tray "标记全部已读" — clear the blue unread set
+  useEffect(() => {
+    if (!window.electronAPI?.onClearUnreadSessions) return;
+    const cleanup = window.electronAPI.onClearUnreadSessions(() => {
+      setUnreadCompletedSessionIds(EMPTY_SET);
+    });
+    return cleanup;
+  }, []);
   const [activeColumnId, setActiveColumnIdRaw] = useState<string>(() => loadActiveColumn());
   const isSplitActive = splitSessions.length >= 2;
   const isChatDetailRoute = pathname.startsWith("/chat/") || isSplitActive;
@@ -528,12 +628,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setPendingApprovalSessionId,
       activeStreamingSessions,
       pendingApprovalSessionIds,
+      unreadCompletedSessionIds,
       previewFile,
       setPreviewFile,
       previewViewMode,
       setPreviewViewMode,
     }),
-    [panelOpen, setPanelOpen, panelContent, workingDirectory, sessionId, sessionTitle, streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, previewFile, setPreviewFile, previewViewMode]
+    [panelOpen, setPanelOpen, panelContent, workingDirectory, sessionId, sessionTitle, streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, unreadCompletedSessionIds, previewFile, setPreviewFile, previewViewMode]
   );
 
   const imageGenValue = useImageGenState();
@@ -550,8 +651,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <NavRail
               chatListOpen={chatListOpen}
               onToggleChatList={() => setChatListOpen(!chatListOpen)}
-              hasUpdate={updateInfo?.updateAvailable ?? false}
-              readyToInstall={updateInfo?.readyToInstall ?? false}
+              hasUpdate={false}
+              readyToInstall={false}
               skipPermissionsActive={skipPermissionsActive}
             />
             <ErrorBoundary>
@@ -566,7 +667,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 className="h-10 w-full shrink-0"
                 style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
               />
-              <UpdateBanner />
+              {/* UpdateBanner hidden: updates disabled */}
               <main className="relative flex-1 overflow-hidden">
                 {isSplitActive ? (
                   <SplitChatContainer />
@@ -598,7 +699,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </ErrorBoundary>
             )}
           </div>
-          <UpdateDialog />
+          {/* UpdateDialog hidden: updates disabled */}
         </TooltipProvider>
         </BatchImageGenContext.Provider>
         </ImageGenContext.Provider>

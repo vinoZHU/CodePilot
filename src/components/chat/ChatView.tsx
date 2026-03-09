@@ -23,6 +23,7 @@ import {
   respondToPermission,
   clearSnapshot,
 } from '@/lib/stream-session-manager';
+import { setCachedMessages, invalidateCachedMessages } from '@/lib/message-cache';
 
 interface ChatViewProps {
   sessionId: string;
@@ -36,9 +37,11 @@ interface ChatViewProps {
   sessionTitle?: string;
   /** Project/folder name for desktop notifications */
   projectName?: string;
+  /** Called once (and on session change) with a stable refresh function the parent can invoke */
+  onRefreshReady?: (fn: () => Promise<void>) => void;
 }
 
-export function ChatView({ sessionId, initialMessages = [], initialHasMore = false, modelName, initialMode, providerId, initialPermissionProfile, sessionTitle, projectName }: ChatViewProps) {
+export function ChatView({ sessionId, initialMessages = [], initialHasMore = false, modelName, initialMode, providerId, initialPermissionProfile, sessionTitle, projectName, onRefreshReady }: ChatViewProps) {
   const { setStreamingSessionId, workingDirectory, setWorkingDirectory, setPanelOpen, setPendingApprovalSessionId } = usePanel();
   const { t } = useTranslation();
   const router = useRouter();
@@ -136,6 +139,33 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, provider_id: newProviderId }),
     }).catch(() => {});
+  }, [sessionId]);
+
+  // Subscribe to bridge SSE events — refreshes messages when bridge processes
+  // an inbound POPO/Telegram/etc. message for this session.
+  // Uses EventSource so the UI updates as soon as bridge finishes, without polling.
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const es = new EventSource(`/api/chat/sessions/${sessionId}/events`);
+
+    es.addEventListener('bridge-update', () => {
+      // Re-fetch latest messages from DB so bridge responses appear immediately
+      fetch(`/api/chat/sessions/${sessionId}/messages?limit=50`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.messages && data.messages.length > 0) {
+            setMessages(data.messages);
+          }
+        })
+        .catch(() => { /* silent — keep existing messages */ });
+    });
+
+    es.onerror = () => {
+      // EventSource will auto-reconnect; no action needed
+    };
+
+    return () => es.close();
   }, [sessionId]);
 
   // Subscribe to stream-session-manager for this session.
@@ -237,6 +267,35 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
       setMessages(initialMessages);
     }
   }, [initialMessages]);
+
+  // Sync messages → cache whenever message list changes.
+  // Note: no isStreaming guard needed — during streaming, messages array does not
+  // change (streaming content lives in streamSnapshot, not messages). Messages
+  // only change on send (adds user msg) or on stream completion (adds assistant msg).
+  useEffect(() => {
+    if (messages.length > 0) {
+      setCachedMessages(sessionId, messages, hasMore);
+    }
+  }, [sessionId, messages, hasMore]);
+
+  // Manual refresh: re-fetch latest messages from server and update cache.
+  const refreshMessages = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/chat/sessions/${sessionId}/messages?limit=50`);
+      if (!res.ok) return;
+      const data: MessagesResponse = await res.json();
+      setCachedMessages(sessionId, data.messages, data.hasMore ?? false);
+      setMessages(data.messages);
+      setHasMore(data.hasMore ?? false);
+    } catch {
+      // silent
+    }
+  }, [sessionId]);
+
+  // Register refresh function with parent once (and whenever session changes).
+  useEffect(() => {
+    onRefreshReady?.(refreshMessages);
+  }, [onRefreshReady, refreshMessages]);
 
   // Sync mode when session data loads
   useEffect(() => {
@@ -580,6 +639,7 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
       }
       case '/clear':
         setMessages([]);
+        invalidateCachedMessages(sessionId);
         // Also clear database messages and reset SDK session
         if (sessionId) {
           fetch(`/api/chat/sessions/${sessionId}`, {

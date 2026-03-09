@@ -16,6 +16,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Loading02Icon, CheckmarkCircle02Icon, Alert02Icon, TelegramIcon, BubbleChatIcon, GameController01Icon, MessageMultiple02Icon } from "@hugeicons/core-free-icons";
 import { useTranslation } from "@/hooks/useTranslation";
+import { getApiCache, setApiCache } from "@/lib/api-cache";
 import type { ProviderModelGroup } from "@/types";
 
 interface AdapterStatus {
@@ -38,6 +39,7 @@ interface BridgeSettings {
   bridge_feishu_enabled: string;
   bridge_discord_enabled: string;
   bridge_qq_enabled: string;
+  bridge_popo_enabled: string;
   bridge_auto_start: string;
   bridge_default_work_dir: string;
   bridge_default_model: string;
@@ -50,6 +52,7 @@ const DEFAULT_SETTINGS: BridgeSettings = {
   bridge_feishu_enabled: "",
   bridge_discord_enabled: "",
   bridge_qq_enabled: "",
+  bridge_popo_enabled: "",
   bridge_auto_start: "",
   bridge_default_work_dir: "",
   bridge_default_model: "",
@@ -57,14 +60,24 @@ const DEFAULT_SETTINGS: BridgeSettings = {
 };
 
 export function BridgeSection() {
-  const [settings, setSettings] = useState<BridgeSettings>(DEFAULT_SETTINGS);
+  // Initialise from cache so the form shows configured values immediately
+  const cachedSettings = getApiCache<BridgeSettings>('bridge-settings');
+  const cachedModels   = getApiCache<ProviderModelGroup[]>('bridge-models');
+
+  const [settings, setSettings] = useState<BridgeSettings>(cachedSettings ?? DEFAULT_SETTINGS);
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const [workDir, setWorkDir] = useState("");
-  const [model, setModel] = useState("");
-  const [providerGroups, setProviderGroups] = useState<ProviderModelGroup[]>([]);
+  const [workDir, setWorkDir] = useState(() => cachedSettings?.bridge_default_work_dir ?? "");
+  const [model, setModel] = useState(() => {
+    if (!cachedSettings) return "";
+    if (cachedSettings.bridge_default_provider_id && cachedSettings.bridge_default_model) {
+      return `${cachedSettings.bridge_default_provider_id}::${cachedSettings.bridge_default_model}`;
+    }
+    return cachedSettings.bridge_default_model ?? "";
+  });
+  const [providerGroups, setProviderGroups] = useState<ProviderModelGroup[]>(cachedModels ?? []);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { t } = useTranslation();
 
@@ -74,6 +87,7 @@ export function BridgeSection() {
       if (res.ok) {
         const data = await res.json();
         const s = { ...DEFAULT_SETTINGS, ...data.settings };
+        setApiCache('bridge-settings', s);
         setSettings(s);
         setWorkDir(s.bridge_default_work_dir);
         // Build composite value for Select: "provider_id::model"
@@ -108,6 +122,7 @@ export function BridgeSection() {
       if (res.ok) {
         const data = await res.json();
         if (data.groups && data.groups.length > 0) {
+          setApiCache('bridge-models', data.groups);
           setProviderGroups(data.groups);
         }
       }
@@ -146,7 +161,9 @@ export function BridgeSection() {
         body: JSON.stringify({ settings: updates }),
       });
       if (res.ok) {
-        setSettings((prev) => ({ ...prev, ...updates }));
+        const merged = { ...settings, ...updates };
+        setApiCache('bridge-settings', merged);
+        setSettings(merged);
       }
     } catch {
       // ignore
@@ -173,6 +190,10 @@ export function BridgeSection() {
 
   const handleToggleQQ = (checked: boolean) => {
     saveSettings({ bridge_qq_enabled: checked ? "true" : "" });
+  };
+
+  const handleTogglePopo = (checked: boolean) => {
+    saveSettings({ bridge_popo_enabled: checked ? "true" : "" });
   };
 
   const handleSaveDefaults = () => {
@@ -247,6 +268,7 @@ export function BridgeSection() {
   const isFeishuEnabled = settings.bridge_feishu_enabled === "true";
   const isDiscordEnabled = settings.bridge_discord_enabled === "true";
   const isQQEnabled = settings.bridge_qq_enabled === "true";
+  const isPopoEnabled = settings.bridge_popo_enabled === "true";
   const isAutoStart = settings.bridge_auto_start === "true";
   const isRunning = bridgeStatus?.running ?? false;
   const adapterCount = bridgeStatus?.adapters?.length ?? 0;
@@ -432,6 +454,26 @@ export function BridgeSection() {
               <Switch
                 checked={isQQEnabled}
                 onCheckedChange={handleToggleQQ}
+                disabled={saving}
+              />
+            </div>
+
+            <div className="flex items-center justify-between border-t border-border/30 pt-3">
+              <div className="flex items-center gap-3">
+                <HugeiconsIcon
+                  icon={MessageMultiple02Icon}
+                  className="h-4 w-4 text-muted-foreground"
+                />
+                <div>
+                  <p className="text-sm">{t("bridge.popoChannel")}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("bridge.popoChannelDesc")}
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={isPopoEnabled}
+                onCheckedChange={handleTogglePopo}
                 disabled={saving}
               />
             </div>

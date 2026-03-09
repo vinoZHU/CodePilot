@@ -34,6 +34,7 @@ import { ConnectionStatus } from "./ConnectionStatus";
 import { ImportSessionDialog } from "./ImportSessionDialog";
 import { FolderPicker } from "@/components/chat/FolderPicker";
 import { useAssistantWorkspace } from "@/hooks/useAssistantWorkspace";
+import { setCachedSessions, clearCachedSession } from "@/lib/session-cache";
 import type { ChatSession } from "@/types";
 
 interface ChatListPanelProps {
@@ -117,7 +118,7 @@ function groupSessionsByProject(sessions: ChatSession[]): ProjectGroup[] {
 export function ChatListPanel({ open, width }: ChatListPanelProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, workingDirectory, sessionId: currentSessionId } = usePanel();
+  const { streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, unreadCompletedSessionIds, workingDirectory, sessionId: currentSessionId } = usePanel();
   const { splitSessions, isSplitActive, activeColumnId, addToSplit, removeFromSplit, setActiveColumn, isInSplit } = useSplit();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
@@ -236,7 +237,10 @@ export function ChatListPanel({ open, width }: ChatListPanelProps) {
       const res = await fetch("/api/chat/sessions", { signal: controller.signal });
       if (res.ok) {
         const data = await res.json();
-        setSessions(data.sessions || []);
+        const fetched: ChatSession[] = data.sessions || [];
+        // Populate module-level cache so chat pages can render immediately
+        setCachedSessions(fetched);
+        setSessions(fetched);
       }
     } catch (e) {
       // Ignore abort errors; log others
@@ -293,6 +297,8 @@ export function ChatListPanel({ open, width }: ChatListPanelProps) {
       });
       if (res.ok) {
         setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+        // Evict from module-level cache
+        clearCachedSession(sessionId);
         // Remove from split if it's there
         if (isInSplit(sessionId)) {
           removeFromSplit(sessionId);
@@ -464,6 +470,7 @@ export function ChatListPanel({ open, width }: ChatListPanelProps) {
                     activeStreamingSessions.has(session.sessionId) || streamingSessionId === session.sessionId;
                   const needsApproval =
                     pendingApprovalSessionIds.has(session.sessionId) || pendingApprovalSessionId === session.sessionId;
+                  const isUnreadCompleted = unreadCompletedSessionIds.has(session.sessionId);
 
                   return (
                     <div
@@ -479,7 +486,7 @@ export function ChatListPanel({ open, width }: ChatListPanelProps) {
                         setActiveColumn(session.sessionId);
                       }}
                     >
-                      {isSessionStreaming && (
+                      {isSessionStreaming && !needsApproval && (
                         <span className="relative flex h-2 w-2 shrink-0">
                           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
                           <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
@@ -488,6 +495,11 @@ export function ChatListPanel({ open, width }: ChatListPanelProps) {
                       {needsApproval && (
                         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-amber-500/10">
                           <HugeiconsIcon icon={Notification02Icon} className="h-2.5 w-2.5 text-amber-500" />
+                        </span>
+                      )}
+                      {isUnreadCompleted && !isSessionStreaming && !needsApproval && (
+                        <span className="relative flex h-2 w-2 shrink-0">
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
                         </span>
                       )}
                       <div className="flex-1 min-w-0">
@@ -621,6 +633,7 @@ export function ChatListPanel({ open, width }: ChatListPanelProps) {
                           activeStreamingSessions.has(session.id) || streamingSessionId === session.id;
                         const needsApproval =
                           pendingApprovalSessionIds.has(session.id) || pendingApprovalSessionId === session.id;
+                        const isUnreadCompleted = unreadCompletedSessionIds.has(session.id);
                         const canSplit = !isActive && !isInSplit(session.id);
 
                         return (
@@ -665,8 +678,8 @@ export function ChatListPanel({ open, width }: ChatListPanelProps) {
                                     <Columns2 className="h-3.5 w-3.5" />
                                   </button>
                                 )}
-                                {/* Streaming indicator: hidden when hover shows split icon */}
-                                {isSessionStreaming && (
+                                {/* Streaming indicator: hidden when hover shows split icon, or when approval is pending */}
+                                {isSessionStreaming && !needsApproval && (
                                   <span className={cn(
                                     "relative flex h-2 w-2 transition-opacity",
                                     isHovered && canSplit ? "opacity-0" : "opacity-100"
@@ -675,13 +688,22 @@ export function ChatListPanel({ open, width }: ChatListPanelProps) {
                                     <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
                                   </span>
                                 )}
-                                {/* Approval indicator: hidden when hover shows split icon */}
-                                {needsApproval && !isSessionStreaming && (
+                                {/* Approval indicator takes priority over streaming — hidden when hover shows split icon */}
+                                {needsApproval && (
                                   <span className={cn(
                                     "flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500/10 transition-opacity",
                                     isHovered && canSplit ? "opacity-0" : "opacity-100"
                                   )}>
                                     <HugeiconsIcon icon={Notification02Icon} className="h-2.5 w-2.5 text-amber-500" />
+                                  </span>
+                                )}
+                                {/* Unread completed indicator: blue dot, shown when not streaming or pending approval */}
+                                {isUnreadCompleted && !isSessionStreaming && !needsApproval && (
+                                  <span className={cn(
+                                    "relative flex h-2 w-2 transition-opacity",
+                                    isHovered && canSplit ? "opacity-0" : "opacity-100"
+                                  )}>
+                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
                                   </span>
                                 )}
                               </span>
@@ -725,7 +747,7 @@ export function ChatListPanel({ open, width }: ChatListPanelProps) {
       {/* Version */}
       <div className="shrink-0 px-3 py-2 text-center">
         <span className="text-[10px] text-muted-foreground/40">
-          v{process.env.NEXT_PUBLIC_APP_VERSION}
+          v0.28.1-yd
         </span>
       </div>
 

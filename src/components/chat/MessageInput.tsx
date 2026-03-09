@@ -163,6 +163,13 @@ const DEFAULT_MODEL_OPTIONS = [
 ];
 
 /**
+ * Per-session input draft store. Preserves typed text across session switches so
+ * the user's in-progress input is restored when they navigate back to a session.
+ * Uses a module-level Map so it survives component unmounts but is reset on page reload.
+ */
+const inputDraftStore = new Map<string, string>();
+
+/**
  * Convert a data URL to a FileAttachment object.
  */
 async function dataUrlToFileAttachment(
@@ -394,7 +401,14 @@ export function MessageInput({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [triggerPos, setTriggerPos] = useState<number | null>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState(() =>
+    // Restore draft from previous visit to this session (if any)
+    sessionId ? (inputDraftStore.get(sessionId) ?? '') : ''
+  );
+  // Always keep a ref to the latest inputValue so the unmount cleanup can save it.
+  // We update this synchronously during render (not in useEffect) so it's always current.
+  const inputValueRef = useRef(inputValue);
+  inputValueRef.current = inputValue;
   const [badge, setBadge] = useState<CommandBadge | null>(null);
   const [providerGroups, setProviderGroups] = useState<ProviderModelGroup[]>([]);
   const [defaultProviderId, setDefaultProviderId] = useState<string>('');
@@ -405,6 +419,21 @@ export function MessageInput({
 
   // Assistant trigger on first focus
   const assistantTriggerFired = useRef(false);
+
+  // Save input draft on unmount (session switch) so it can be restored next visit.
+  // sessionId is stable while this component is mounted (key={sessionId} in ChatView).
+  useEffect(() => {
+    return () => {
+      if (sessionId) {
+        const val = inputValueRef.current;
+        if (val) {
+          inputDraftStore.set(sessionId, val);
+        } else {
+          inputDraftStore.delete(sessionId);
+        }
+      }
+    };
+  }, [sessionId]);
 
   const handleAssistantFocus = useCallback(() => {
     if (!assistantTriggerFired.current && onAssistantTrigger) {
@@ -579,6 +608,15 @@ export function MessageInput({
   // Handle input changes to detect @ and /
   const handleInputChange = useCallback(async (val: string) => {
     setInputValue(val);
+    // Eagerly persist draft on every keystroke so restore works regardless of
+    // React 18 concurrent-mode cleanup timing (useEffect cleanup is async).
+    if (sessionId) {
+      if (val) {
+        inputDraftStore.set(sessionId, val);
+      } else {
+        inputDraftStore.delete(sessionId);
+      }
+    }
 
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -615,7 +653,7 @@ export function MessageInput({
     if (popoverMode) {
       closePopover();
     }
-  }, [fetchFiles, fetchSkills, popoverMode, closePopover]);
+  }, [fetchFiles, fetchSkills, popoverMode, closePopover, sessionId]);
 
   // Insert `/` into textarea to trigger slash command popover
   const handleInsertSlash = useCallback(() => {

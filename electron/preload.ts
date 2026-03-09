@@ -30,4 +30,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   notify: (title: string, body: string, subtitle?: string) =>
     ipcRenderer.invoke('notification:show', title, body, subtitle),
+  /** Update the macOS Dock + tray badge count. Pass 0 to clear. */
+  updateBadge: (count: number) => ipcRenderer.invoke('badge:update', count),
+  /** Register a callback that fires when the user clicks "清除" in the tray menu */
+  onClearUnreadSessions: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on('clear-unread-sessions', handler);
+    return () => { ipcRenderer.removeListener('clear-unread-sessions', handler); };
+  },
 });

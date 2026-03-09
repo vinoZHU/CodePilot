@@ -678,7 +678,7 @@ export const PromptInput = ({
         }
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- cleanup only on unmount; filesRef always current
+     
     [usingProvider]
   );
 
@@ -845,6 +845,10 @@ export const PromptInputTextarea = ({
   const controller = useOptionalPromptInputController();
   const attachments = usePromptInputAttachments();
   const [isComposing, setIsComposing] = useState(false);
+  // Track when composition just ended — on macOS, compositionend fires before keydown,
+  // so isComposing is already false when Enter keydown arrives. We need this ref to
+  // prevent the Enter key that confirms an IME candidate from also submitting the form.
+  const justFinishedComposingRef = useRef(false);
 
   const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = useCallback(
     (e) => {
@@ -857,7 +861,7 @@ export const PromptInputTextarea = ({
       }
 
       if (e.key === "Enter") {
-        if (isComposing || e.nativeEvent.isComposing) {
+        if (isComposing || e.nativeEvent.isComposing || justFinishedComposingRef.current) {
           return;
         }
         if (e.shiftKey) {
@@ -920,8 +924,19 @@ export const PromptInputTextarea = ({
     [attachments]
   );
 
-  const handleCompositionEnd = useCallback(() => setIsComposing(false), []);
-  const handleCompositionStart = useCallback(() => setIsComposing(true), []);
+  const handleCompositionEnd = useCallback(() => {
+    setIsComposing(false);
+    // Set the "just finished" flag to block the immediately-following Enter keydown
+    // (macOS fires compositionend → keydown(Enter), both with isComposing=false)
+    justFinishedComposingRef.current = true;
+    setTimeout(() => {
+      justFinishedComposingRef.current = false;
+    }, 0);
+  }, []);
+  const handleCompositionStart = useCallback(() => {
+    setIsComposing(true);
+    justFinishedComposingRef.current = false;
+  }, []);
 
   const controlledProps = controller
     ? {

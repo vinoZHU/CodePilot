@@ -13,6 +13,7 @@ import { CreateSkillDialog } from "./CreateSkillDialog";
 import { MarketplaceBrowser } from "./MarketplaceBrowser";
 import { useTranslation } from "@/hooks/useTranslation";
 import { cn } from "@/lib/utils";
+import { getApiCache, setApiCache, invalidateApiCacheByPrefix } from "@/lib/api-cache";
 import type { SkillItem } from "./SkillListItem";
 
 type ViewTab = "local" | "marketplace";
@@ -20,9 +21,10 @@ type ViewTab = "local" | "marketplace";
 export function SkillsManager() {
   const { workingDirectory } = usePanel();
   const { t } = useTranslation();
-  const [skills, setSkills] = useState<SkillItem[]>([]);
+  const cacheKey = `skills:${workingDirectory || ''}`;
+  const [skills, setSkills] = useState<SkillItem[]>(() => getApiCache<SkillItem[]>(cacheKey) ?? []);
   const [selected, setSelected] = useState<SkillItem | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !getApiCache<SkillItem[]>(cacheKey));
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [viewTab, setViewTab] = useState<ViewTab>("local");
@@ -33,15 +35,17 @@ export function SkillsManager() {
       const res = await fetch(`/api/skills${cwdParam}`);
       if (res.ok) {
         const data = await res.json();
+        const fetched: SkillItem[] = data.skills || [];
+        setApiCache(cacheKey, fetched);
         // Include all skills (global, project, installed, plugin, agent)
-        setSkills(data.skills || []);
+        setSkills(fetched);
       }
     } catch {
       // ignore
     } finally {
       setLoading(false);
     }
-  }, [workingDirectory]);
+  }, [workingDirectory, cacheKey]);
 
   useEffect(() => {
     fetchSkills();
@@ -59,10 +63,14 @@ export function SkillsManager() {
         throw new Error(data.error || "Failed to create skill");
       }
       const data = await res.json();
-      setSkills((prev) => [...prev, data.skill]);
+      setSkills((prev) => {
+        const updated = [...prev, data.skill];
+        setApiCache(cacheKey, updated);
+        return updated;
+      });
       setSelected(data.skill);
     },
-    [workingDirectory]
+    [workingDirectory, cacheKey]
   );
 
   const buildSkillUrl = useCallback((skill: SkillItem) => {
@@ -90,35 +98,39 @@ export function SkillsManager() {
       }
       const data = await res.json();
       // Update in list
-      setSkills((prev) =>
-        prev.map((s) =>
+      setSkills((prev) => {
+        const updated = prev.map((s) =>
           s.name === skill.name &&
           s.source === data.skill.source &&
           s.installedSource === data.skill.installedSource
             ? data.skill
             : s
-        )
-      );
+        );
+        setApiCache(cacheKey, updated);
+        return updated;
+      });
       // Update selected
       setSelected(data.skill);
     },
-    [buildSkillUrl]
+    [buildSkillUrl, cacheKey]
   );
 
   const handleDelete = useCallback(
     async (skill: SkillItem) => {
       const res = await fetch(buildSkillUrl(skill), { method: "DELETE" });
       if (res.ok) {
-        setSkills((prev) =>
-          prev.filter(
+        setSkills((prev) => {
+          const updated = prev.filter(
             (s) =>
               !(
                 s.name === skill.name &&
                 s.source === skill.source &&
                 s.installedSource === skill.installedSource
               )
-          )
-        );
+          );
+          setApiCache(cacheKey, updated);
+          return updated;
+        });
         if (
           selected?.name === skill.name &&
           selected?.source === skill.source &&
@@ -128,7 +140,7 @@ export function SkillsManager() {
         }
       }
     },
-    [buildSkillUrl, selected]
+    [buildSkillUrl, selected, cacheKey]
   );
 
   const filtered = skills.filter(

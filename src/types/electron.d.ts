@@ -58,6 +58,12 @@ interface ElectronAPI {
   };
   install: ElectronInstallAPI;
   updater?: ElectronUpdaterAPI;
+  /** Show a macOS system notification */
+  notify: (title: string, body: string, subtitle?: string) => Promise<void>;
+  /** Update the macOS Dock + tray badge count. Pass 0 to clear. */
+  updateBadge: (count: number) => Promise<void>;
+  /** Register a callback that fires when the user clicks "清除" in the tray menu */
+  onClearUnreadSessions: (cb: () => void) => () => void;
 }
 
 declare global {

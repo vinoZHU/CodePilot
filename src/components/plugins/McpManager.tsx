@@ -10,6 +10,7 @@ import { McpServerList } from "@/components/plugins/McpServerList";
 import { McpServerEditor } from "@/components/plugins/McpServerEditor";
 import { ConfigEditor } from "@/components/plugins/ConfigEditor";
 import { useTranslation } from "@/hooks/useTranslation";
+import { getApiCache, setApiCache } from "@/lib/api-cache";
 import type { TranslationKey } from "@/i18n";
 import type { MCPServer } from "@/types";
 
@@ -21,8 +22,10 @@ interface McpRuntimeStatus {
 
 export function McpManager() {
   const { t } = useTranslation();
-  const [servers, setServers] = useState<Record<string, MCPServer>>({});
-  const [loading, setLoading] = useState(true);
+  const [servers, setServers] = useState<Record<string, MCPServer>>(
+    () => getApiCache<Record<string, MCPServer>>('mcp-servers') ?? {}
+  );
+  const [loading, setLoading] = useState(() => !getApiCache<Record<string, MCPServer>>('mcp-servers'));
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingName, setEditingName] = useState<string | undefined>();
   const [editingServer, setEditingServer] = useState<MCPServer | undefined>();
@@ -38,6 +41,7 @@ export function McpManager() {
       const res = await fetch("/api/plugins/mcp");
       const data = await res.json();
       if (data.mcpServers) {
+        setApiCache('mcp-servers', data.mcpServers);
         setServers(data.mcpServers);
       } else if (data.error) {
         setError(data.error);
@@ -100,11 +104,10 @@ export function McpManager() {
         method: "DELETE",
       });
       if (res.ok) {
-        setServers((prev) => {
-          const updated = { ...prev };
-          delete updated[name];
-          return updated;
-        });
+        const updated = { ...servers };
+        delete updated[name];
+        setApiCache('mcp-servers', updated);
+        setServers(updated);
       } else {
         const data = await res.json();
         console.error("Failed to delete MCP server:", data.error);
@@ -125,6 +128,7 @@ export function McpManager() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mcpServers: updated }),
         });
+        setApiCache('mcp-servers', updated);
         setServers(updated);
       } catch (err) {
         console.error("Failed to save MCP server:", err);
@@ -137,6 +141,7 @@ export function McpManager() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mcpServers: updated }),
         });
+        setApiCache('mcp-servers', updated);
         setServers(updated);
       } catch (err) {
         console.error("Failed to save MCP server:", err);
@@ -149,7 +154,9 @@ export function McpManager() {
           body: JSON.stringify({ name, server }),
         });
         if (res.ok) {
-          setServers((prev) => ({ ...prev, [name]: server }));
+          const updated = { ...servers, [name]: server };
+          setApiCache('mcp-servers', updated);
+          setServers(updated);
         } else {
           const data = await res.json();
           console.error("Failed to add MCP server:", data.error);
@@ -168,6 +175,7 @@ export function McpManager() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mcpServers: parsed }),
       });
+      setApiCache('mcp-servers', parsed);
       setServers(parsed);
     } catch (err) {
       console.error("Failed to save MCP config:", err);

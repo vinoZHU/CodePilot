@@ -33,6 +33,8 @@ let serverExitCode: number | null = null;
 let userShellEnv: Record<string, string> = {};
 let isQuitting = false;
 let tray: Tray | null = null;
+/** Unread notification count — shown as badge on dock icon and tray title */
+let notificationCount = 0;
 
 // --- Install orchestrator ---
 interface InstallStep {
@@ -164,8 +166,8 @@ async function stopBridge(): Promise<void> {
 }
 
 /**
- * Create a system tray icon for background bridge mode.
- * Called when all windows are closed but the bridge is still active.
+ * Create a permanent system tray icon in the macOS menu bar.
+ * Idempotent — safe to call multiple times.
  */
 function createTray(): void {
   if (tray) return;
@@ -173,43 +175,16 @@ function createTray(): void {
   const iconPath = getIconPath();
   const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
   tray = new Tray(trayIcon);
-  tray.setToolTip('CodePilot — Bridge Active');
+  tray.setToolTip('CodePilot');
 
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Open CodePilot',
-      click: () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
-          createWindow(`http://127.0.0.1:${serverPort || 3000}`);
-        } else {
-          mainWindow?.focus();
-        }
-      },
-    },
-    { type: 'separator' },
-    {
-      label: 'Bridge Status: Active',
-      enabled: false,
-    },
-    { type: 'separator' },
-    {
-      label: 'Stop Bridge & Quit',
-      click: async () => {
-        await stopBridge();
-        destroyTray();
-        await killServer();
-        app.quit();
-      },
-    },
-  ]);
+  rebuildTrayMenu();
 
-  tray.setContextMenu(contextMenu);
-
-  // Double-click on tray icon opens the window (macOS/Windows)
+  // Double-click opens (or focuses) the main window
   tray.on('double-click', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow(`http://127.0.0.1:${serverPort || 3000}`);
     } else {
+      mainWindow?.show();
       mainWindow?.focus();
     }
   });
@@ -220,6 +195,85 @@ function destroyTray(): void {
     tray.destroy();
     tray = null;
   }
+}
+
+/**
+ * Update the unread notification badge on both the macOS Dock icon and the
+ * menu bar tray icon. Pass 0 to clear the badge.
+ */
+function updateNotificationBadge(count: number): void {
+  notificationCount = Math.max(0, count);
+
+  // Dock icon badge (red bubble with number)
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setBadge(notificationCount > 0 ? String(notificationCount) : '');
+  }
+
+  // Menu bar tray: show count as title text next to the icon
+  if (tray) {
+    tray.setTitle(notificationCount > 0 ? String(notificationCount) : '');
+    rebuildTrayMenu();
+  }
+}
+
+/**
+ * Rebuild the tray context menu, reflecting the current notification count
+ * and bridge/window state.
+ */
+function rebuildTrayMenu(): void {
+  if (!tray) return;
+
+  const openWindow = async () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      try {
+        if (!isDev && !serverProcess) {
+          const port = await getPort();
+          serverProcess = startServer(port);
+          serverPort = port;
+          createWindow();
+          await waitForServer(port);
+          if (mainWindow) mainWindow.loadURL(`http://127.0.0.1:${port}`);
+        } else {
+          createWindow(`http://127.0.0.1:${serverPort || 3000}`);
+        }
+      } catch (err) {
+        console.error('[tray] Failed to open window:', err);
+      }
+    } else {
+      mainWindow?.show();
+      mainWindow?.focus();
+    }
+  };
+
+  const items: Electron.MenuItemConstructorOptions[] = [
+    { label: 'Open CodePilot', click: openWindow },
+  ];
+
+  if (notificationCount > 0) {
+    items.push({ type: 'separator' });
+    items.push({ label: `${notificationCount} 条未读`, enabled: false });
+    items.push({
+      label: '标记全部已读',
+      click: () => {
+        // Tell renderer to clear unread-completed state; badge will update via badge:update IPC
+        mainWindow?.webContents.send('clear-unread-sessions');
+      },
+    });
+  }
+
+  items.push({ type: 'separator' });
+  items.push({
+    label: 'Quit CodePilot',
+    click: async () => {
+      isQuitting = true;
+      await stopBridge();
+      destroyTray();
+      await killServer();
+      app.quit();
+    },
+  });
+
+  tray.setContextMenu(Menu.buildFromTemplate(items));
 }
 
 /**
@@ -577,6 +631,11 @@ app.whenReady().then(async () => {
     app.dock.setIcon(nativeImage.createFromPath(iconPath));
   }
 
+  // Create permanent status bar tray icon on macOS
+  if (process.platform === 'darwin') {
+    createTray();
+  }
+
   // --- Install wizard IPC handlers ---
 
   ipcMain.handle('install:check-prerequisites', async () => {
@@ -927,8 +986,15 @@ app.whenReady().then(async () => {
         mainWindow.show();
         mainWindow.focus();
       }
+      // Badge is driven by React state — no manual clear here
     });
     n.show();
+    // Badge count is managed by the renderer via badge:update IPC — not incremented here
+  });
+
+  // React-driven badge count: renderer sends the union count of (unreadCompleted ∪ pendingApprovals)
+  ipcMain.handle('badge:update', (_event, count: number) => {
+    updateNotificationBadge(count);
   });
 
   try {
@@ -985,24 +1051,27 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', async () => {
-  // If bridge is active, keep the server running and show a tray icon
   const bridgeActive = await isBridgeActive();
   if (bridgeActive) {
-    console.log('Bridge is active — keeping server alive in background with tray icon');
-    createTray();
+    // Bridge is running — keep server alive, tray already visible
+    console.log('Bridge is active — keeping server alive in background');
     return;
   }
 
+  if (process.platform === 'darwin') {
+    // macOS: keep app + server alive, accessible via status bar tray
+    console.log('All windows closed — running in macOS status bar');
+    return;
+  }
+
+  // Windows / Linux: quit when all windows close
   destroyTray();
   await killServer();
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
 });
 
 app.on('activate', async () => {
-  // If tray is active (bridge background mode), destroy it when user re-opens
-  destroyTray();
+  // Tray is permanent on macOS — no need to destroy/recreate it
 
   if (BrowserWindow.getAllWindows().length === 0) {
     try {

@@ -29,6 +29,7 @@ import {
   sanitizeInput,
   validateMode,
 } from './security/validators';
+import { notifyBridgeUpdate } from './bridge-events';
 
 const GLOBAL_KEY = '__bridge_manager__';
 
@@ -145,6 +146,21 @@ async function deliverResponse(
       const result = await deliver(adapter, {
         address,
         text: effectiveChunks[i],
+        parseMode: 'plain',
+        replyToMessageId,
+      }, { sessionId });
+      if (!result.ok) return result;
+    }
+    return { ok: true };
+  }
+  if (adapter.channelType === 'popo') {
+    // POPO: plain text only, 3000-char limit, no max chunk count
+    const limit = limits.popo || 3000;
+    const chunks = chunkText(responseText, limit);
+    for (const chunk of chunks) {
+      const result = await deliver(adapter, {
+        address,
+        text: chunk,
         parseMode: 'plain',
         replyToMessageId,
       }, { sessionId });
@@ -590,6 +606,10 @@ async function handleMessage(
       };
       await deliver(adapter, errorResponse);
     }
+
+    // Notify any open ChatView SSE subscribers that messages have been updated.
+    // This triggers real-time refresh of the conversation in the CodePilot UI.
+    notifyBridgeUpdate(binding.codepilotSessionId);
 
     // Persist the actual SDK session ID for future resume.
     // On error, ALWAYS clear — the SDK may emit a session_id before crashing,
