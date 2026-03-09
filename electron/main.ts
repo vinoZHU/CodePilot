@@ -172,7 +172,9 @@ async function stopBridge(): Promise<void> {
 function createTray(): void {
   if (tray) return;
 
-  const iconPath = getIconPath();
+  const iconPath = getTrayIconPath();
+  // Use 16x16 display size; source is 32x32 for crisp Retina rendering.
+  // Do NOT setTemplateImage — icon has colored background and would render as white square.
   const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
   tray = new Tray(trayIcon);
   tray.setToolTip('CodePilot');
@@ -525,6 +527,23 @@ function getIconPath(): string {
     return path.join(process.resourcesPath, 'icon.png');
   }
   return path.join(process.resourcesPath, 'icon.icns');
+}
+
+/**
+ * macOS menu bar tray icons must be PNG (not ICNS).
+ * ICNS files are for Dock/Finder icons; nativeImage.createFromPath(icns)
+ * returns an empty image when used as a Tray icon in a packaged app.
+ *
+ * Uses a dedicated 32x32 tray-icon.png (displayed at 16pt @2x on Retina).
+ * Do NOT call setTemplateImage(true) unless the PNG is truly monochrome with
+ * a transparent background — a colorful icon with setTemplateImage renders
+ * every opaque pixel as solid white, producing a white square in the menu bar.
+ */
+function getTrayIconPath(): string {
+  if (isDev) {
+    return path.join(process.cwd(), 'build', 'tray-icon.png');
+  }
+  return path.join(process.resourcesPath, 'tray-icon.png');
 }
 
 /** Inline loading HTML shown while the server starts up */

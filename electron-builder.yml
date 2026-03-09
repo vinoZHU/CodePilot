@@ -38,7 +38,7 @@ extraResources:
     filter: ["**/*"]
   - from: build/
     to: .
-    filter: ["icon.*"]
+    filter: ["icon.*", "tray-icon.png"]
 afterPack: scripts/after-pack.js
 afterSign: scripts/after-sign.js
 asarUnpack:
