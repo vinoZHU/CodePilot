@@ -14,6 +14,8 @@ import type {
   McpServerConfig,
   NotificationHookInput,
   PostToolUseHookInput,
+  SubagentStartHookInput,
+  SubagentStopHookInput,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ClaudeStreamOptions, SSEEvent, TokenUsage, MCPServerConfig, PermissionRequestEvent, FileAttachment, ApiProvider } from '@/types';
 import { isImageFile } from '@/types';
@@ -605,6 +607,35 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
               return {};
             }],
           }],
+          SubagentStart: [{
+            hooks: [async (input) => {
+              const agentEvent = input as SubagentStartHookInput;
+              console.log('[claude-client] SubagentStart:', agentEvent.agent_type, 'id:', agentEvent.agent_id);
+              controller.enqueue(formatSSE({
+                type: 'agent_start',
+                data: JSON.stringify({
+                  agent_id: agentEvent.agent_id,
+                  agent_type: agentEvent.agent_type,
+                }),
+              }));
+              return {};
+            }],
+          }],
+          SubagentStop: [{
+            hooks: [async (input) => {
+              const agentEvent = input as SubagentStopHookInput;
+              console.log('[claude-client] SubagentStop:', agentEvent.agent_type, 'id:', agentEvent.agent_id);
+              controller.enqueue(formatSSE({
+                type: 'agent_stop',
+                data: JSON.stringify({
+                  agent_id: agentEvent.agent_id,
+                  agent_type: agentEvent.agent_type,
+                  last_message: agentEvent.last_assistant_message,
+                }),
+              }));
+              return {};
+            }],
+          }],
         };
 
         // Capture real-time stderr output from Claude Code process
@@ -851,6 +882,11 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
                 const delta = evt.delta;
                 if ('text' in delta && delta.text) {
                   controller.enqueue(formatSSE({ type: 'text', data: delta.text }));
+                } else if ('thinking' in delta && (delta as { thinking?: string }).thinking) {
+                  controller.enqueue(formatSSE({
+                    type: 'thinking',
+                    data: (delta as { thinking: string }).thinking,
+                  }));
                 }
               }
               break;

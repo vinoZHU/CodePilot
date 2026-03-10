@@ -10,6 +10,7 @@ import {
   CommandLineIcon,
   Search01Icon,
   Wrench01Icon,
+  Globe02Icon,
   Loading02Icon,
   CheckmarkCircle02Icon,
   CancelCircleIcon,
@@ -39,7 +40,7 @@ interface ToolActionsGroupProps {
 // Tool categorisation
 // ---------------------------------------------------------------------------
 
-type ToolCategory = 'read' | 'write' | 'bash' | 'search' | 'other';
+type ToolCategory = 'read' | 'write' | 'bash' | 'search' | 'fetch' | 'other';
 
 function getToolCategory(name: string): ToolCategory {
   const lower = name.toLowerCase();
@@ -58,6 +59,7 @@ function getToolCategory(name: string): ToolCategory {
     lower === 'find_files' || lower === 'search_files' ||
     lower === 'websearch' || lower === 'web_search'
   ) return 'search';
+  if (lower === 'webfetch' || lower === 'web_fetch' || lower === 'fetch') return 'fetch';
   return 'other';
 }
 
@@ -67,6 +69,7 @@ function getToolIcon(category: ToolCategory): IconSvgElement {
     case 'write':  return FileEditIcon;
     case 'bash':   return CommandLineIcon;
     case 'search': return Search01Icon;
+    case 'fetch':  return Globe02Icon;
     case 'other':  return Wrench01Icon;
   }
 }
@@ -98,6 +101,20 @@ function getToolSummary(name: string, input: unknown, category: ToolCategory): s
     case 'search': {
       const pattern = (inp.pattern || inp.query || inp.glob || '') as string;
       return pattern ? `"${pattern.length > 50 ? pattern.slice(0, 47) + '...' : pattern}"` : name;
+    }
+    case 'fetch': {
+      const url = (inp.url || inp.prompt || '') as string;
+      if (url) {
+        try {
+          const parsed = new URL(url as string);
+          const path = parsed.pathname !== '/' ? parsed.pathname : '';
+          const display = parsed.hostname + path;
+          return display.length > 60 ? display.slice(0, 57) + '...' : display;
+        } catch {
+          return (url as string).slice(0, 60);
+        }
+      }
+      return name;
     }
     default:
       return name;

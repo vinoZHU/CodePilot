@@ -16,6 +16,7 @@ import { notifyPermissionRequired, notifyCompleted, notifyError } from '@/lib/no
 import type {
   ToolUseInfo,
   ToolResultInfo,
+  AgentCallInfo,
   SessionStreamSnapshot,
   StreamEvent,
   StreamEventListener,
@@ -48,6 +49,12 @@ interface ActiveStream {
   sessionTitle: string;
   /** Project/folder name for desktop notifications */
   projectName: string;
+  /** Sub-agent invocations during this stream */
+  agentCallsArray: AgentCallInfo[];
+  /** Accumulated extended thinking content */
+  thinkingAccumulated: string;
+  /** Map of tool_use_id → start timestamp (ms) for duration calculation */
+  toolStartTimes: Map<string, number>;
 }
 
 export interface StartStreamParams {
@@ -119,6 +126,8 @@ function buildSnapshot(stream: ActiveStream): SessionStreamSnapshot {
     completedAt: stream.snapshot.completedAt,
     error: stream.snapshot.error,
     finalMessageContent: stream.snapshot.finalMessageContent,
+    agentCalls: stream.agentCallsArray.length > 0 ? [...stream.agentCallsArray] : undefined,
+    thinkingContent: stream.thinkingAccumulated || undefined,
   };
 }
 
@@ -204,6 +213,9 @@ export function startStream(params: StartStreamParams): void {
     rewindPoints: [],
     sessionTitle: params.sessionTitle ?? '',
     projectName: params.projectName ?? '',
+    agentCallsArray: [],
+    thinkingAccumulated: '',
+    toolStartTimes: new Map(),
   };
 
   map.set(params.sessionId, stream);
@@ -268,6 +280,8 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
       onToolUse: (tool) => {
         markActive();
         stream.toolOutputAccumulated = '';
+        // Record start time for duration calculation
+        stream.toolStartTimes.set(tool.id, Date.now());
         if (!stream.toolUsesArray.some(t => t.id === tool.id)) {
           stream.toolUsesArray = [...stream.toolUsesArray, tool];
         }
@@ -276,13 +290,18 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
       onToolResult: (res) => {
         markActive();
         stream.toolOutputAccumulated = '';
+        // Compute duration from recorded start time
+        const startTime = stream.toolStartTimes.get(res.tool_use_id);
+        const duration_ms = startTime !== undefined ? Date.now() - startTime : undefined;
+        const resultWithDuration = { ...res, duration_ms };
+        stream.toolStartTimes.delete(res.tool_use_id);
         const existingIdx = stream.toolResultsArray.findIndex(r => r.tool_use_id === res.tool_use_id);
         if (existingIdx >= 0) {
           const next = [...stream.toolResultsArray];
-          next[existingIdx] = res;
+          next[existingIdx] = resultWithDuration;
           stream.toolResultsArray = next;
         } else {
-          stream.toolResultsArray = [...stream.toolResultsArray, res];
+          stream.toolResultsArray = [...stream.toolResultsArray, resultWithDuration];
         }
         emit(stream, 'snapshot-updated');
         // Refresh file tree after each tool completes
@@ -356,6 +375,35 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
         stream.accumulatedText = acc;
         emit(stream, 'snapshot-updated');
       },
+      onAgentStart: (info) => {
+        markActive();
+        const agentCall: AgentCallInfo = {
+          agent_id: info.agent_id,
+          agent_type: info.agent_type,
+          started_at: Date.now(),
+        };
+        stream.agentCallsArray = [...stream.agentCallsArray, agentCall];
+        emit(stream, 'snapshot-updated');
+      },
+      onAgentStop: (info) => {
+        markActive();
+        const idx = stream.agentCallsArray.findIndex(a => a.agent_id === info.agent_id);
+        if (idx >= 0) {
+          const next = [...stream.agentCallsArray];
+          next[idx] = {
+            ...next[idx],
+            finished_at: Date.now(),
+            last_message: info.last_message,
+          };
+          stream.agentCallsArray = next;
+        }
+        emit(stream, 'snapshot-updated');
+      },
+      onThinking: (delta) => {
+        markActive();
+        stream.thinkingAccumulated += delta;
+        emit(stream, 'snapshot-updated');
+      },
     });
 
     // Stream completed successfully — build final message content
@@ -395,6 +443,9 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
     stream.toolUsesArray = [];
     stream.toolResultsArray = [];
     stream.toolOutputAccumulated = '';
+    stream.agentCallsArray = [];
+    stream.thinkingAccumulated = '';
+    stream.toolStartTimes.clear();
 
     cleanupTimers(stream);
     // Notify user that Claude Code finished responding (only when window is unfocused)
@@ -431,6 +482,9 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
         stream.toolUsesArray = [];
         stream.toolResultsArray = [];
         stream.toolOutputAccumulated = '';
+        stream.agentCallsArray = [];
+        stream.thinkingAccumulated = '';
+        stream.toolStartTimes.clear();
         emit(stream, 'completed');
         // Clear stale SDK session so next message starts fresh
         fetch(`/api/chat/sessions/${encodeURIComponent(stream.sessionId)}`, {
@@ -460,6 +514,9 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
         stream.toolResultsArray = [];
         stream.toolOutputAccumulated = '';
         stream.toolTimeoutInfo = null;
+        stream.agentCallsArray = [];
+        stream.thinkingAccumulated = '';
+        stream.toolStartTimes.clear();
         emit(stream, 'completed');
         scheduleGC(stream);
 
@@ -491,6 +548,9 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
         stream.toolUsesArray = [];
         stream.toolResultsArray = [];
         stream.toolOutputAccumulated = '';
+        stream.agentCallsArray = [];
+        stream.thinkingAccumulated = '';
+        stream.toolStartTimes.clear();
         emit(stream, 'completed');
         scheduleGC(stream);
       }
@@ -511,6 +571,9 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
       stream.toolUsesArray = [];
       stream.toolResultsArray = [];
       stream.toolOutputAccumulated = '';
+      stream.agentCallsArray = [];
+      stream.thinkingAccumulated = '';
+      stream.toolStartTimes.clear();
       // Notify user about the error (only when window is unfocused)
       notifyError(errMsg, stream.sessionTitle, stream.projectName);
       emit(stream, 'completed');

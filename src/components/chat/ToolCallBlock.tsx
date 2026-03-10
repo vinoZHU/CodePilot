@@ -9,6 +9,7 @@ import {
   CommandLineIcon,
   Search01Icon,
   Wrench01Icon,
+  Globe02Icon,
   ArrowDown01Icon,
   ArrowRight01Icon,
   Loading02Icon,
@@ -30,7 +31,7 @@ interface ToolCallBlockProps {
 }
 
 // Classify tools by name
-function getToolCategory(name: string): 'read' | 'write' | 'bash' | 'search' | 'other' {
+function getToolCategory(name: string): 'read' | 'write' | 'bash' | 'search' | 'fetch' | 'other' {
   const lower = name.toLowerCase();
   if (lower === 'read' || lower === 'readfile' || lower === 'read_file') return 'read';
   if (lower === 'write' || lower === 'edit' || lower === 'writefile' || lower === 'write_file'
@@ -41,6 +42,7 @@ function getToolCategory(name: string): 'read' | 'write' | 'bash' | 'search' | '
   if (lower === 'search' || lower === 'glob' || lower === 'grep'
     || lower === 'find_files' || lower === 'search_files'
     || lower === 'websearch' || lower === 'web_search') return 'search';
+  if (lower === 'webfetch' || lower === 'web_fetch' || lower === 'fetch') return 'fetch';
   return 'other';
 }
 
@@ -50,6 +52,7 @@ function getToolIcon(category: ReturnType<typeof getToolCategory>): IconSvgEleme
     case 'write': return FileEditIcon;
     case 'bash': return CommandLineIcon;
     case 'search': return Search01Icon;
+    case 'fetch': return Globe02Icon;
     case 'other': return Wrench01Icon;
   }
 }
@@ -78,6 +81,18 @@ function getToolSummary(name: string, input: unknown, category: ReturnType<typeo
     case 'search': {
       const pattern = (inp.pattern || inp.query || inp.glob || '') as string;
       return pattern ? `"${pattern}"` : name;
+    }
+    case 'fetch': {
+      const url = (inp.url || inp.prompt || '') as string;
+      if (url) {
+        try {
+          const parsed = new URL(url as string);
+          return parsed.hostname + (parsed.pathname !== '/' ? parsed.pathname : '');
+        } catch {
+          return (url as string).slice(0, 80);
+        }
+      }
+      return name;
     }
     default:
       return name;
@@ -258,6 +273,32 @@ export function ToolCallBlock({
         );
       }
 
+      case 'fetch': {
+        const inp = input as Record<string, unknown> | undefined;
+        const url = (inp?.url || inp?.prompt || '') as string;
+        return (
+          <div className="space-y-2">
+            {url && (
+              <div className="text-xs font-mono text-muted-foreground px-1 break-all">
+                <span className="text-cyan-500/70 mr-1">GET</span>
+                <span>{url}</span>
+              </div>
+            )}
+            {result && (
+              <div className="rounded-md bg-muted/50 p-2 text-xs max-h-60 overflow-auto whitespace-pre-wrap break-words text-muted-foreground">
+                {result.slice(0, 5000)}
+              </div>
+            )}
+            {!result && status === 'running' && (
+              <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                <HugeiconsIcon icon={Loading02Icon} className="h-3 w-3 animate-spin" />
+                Fetching...
+              </div>
+            )}
+          </div>
+        );
+      }
+
       default: {
         return (
           <div className="space-y-2">
@@ -313,6 +354,7 @@ export function ToolCallBlock({
           category === 'write' && "text-amber-500",
           category === 'bash' && "text-green-500",
           category === 'search' && "text-indigo-500",
+          category === 'fetch' && "text-cyan-500",
           category === 'other' && "text-zinc-500",
         )} />
         <span className="font-mono text-xs truncate flex-1 text-foreground/80">{summary}</span>

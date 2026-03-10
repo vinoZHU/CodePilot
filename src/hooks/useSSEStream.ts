@@ -1,5 +1,5 @@
 import { useRef, useCallback } from 'react';
-import type { SSEEvent, TokenUsage, PermissionRequestEvent } from '@/types';
+import type { SSEEvent, TokenUsage, PermissionRequestEvent, AgentCallInfo } from '@/types';
 
 interface ToolUseInfo {
   id: string;
@@ -27,6 +27,12 @@ export interface SSECallbacks {
   onRewindPoint: (sdkUserMessageId: string) => void;
   onKeepAlive: () => void;
   onError: (accumulated: string) => void;
+  /** Called when a sub-agent invocation starts */
+  onAgentStart?: (info: Pick<AgentCallInfo, 'agent_id' | 'agent_type'>) => void;
+  /** Called when a sub-agent invocation finishes */
+  onAgentStop?: (info: Pick<AgentCallInfo, 'agent_id' | 'agent_type'> & { last_message?: string }) => void;
+  /** Called for each thinking delta (extended thinking) */
+  onThinking?: (delta: string) => void;
 }
 
 /**
@@ -171,6 +177,38 @@ function handleSSEEvent(
       return next;
     }
 
+    case 'agent_start': {
+      try {
+        const agentData = JSON.parse(event.data);
+        callbacks.onAgentStart?.({
+          agent_id: agentData.agent_id,
+          agent_type: agentData.agent_type,
+        });
+      } catch {
+        // skip malformed agent_start data
+      }
+      return accumulated;
+    }
+
+    case 'agent_stop': {
+      try {
+        const agentData = JSON.parse(event.data);
+        callbacks.onAgentStop?.({
+          agent_id: agentData.agent_id,
+          agent_type: agentData.agent_type,
+          last_message: agentData.last_message,
+        });
+      } catch {
+        // skip malformed agent_stop data
+      }
+      return accumulated;
+    }
+
+    case 'thinking': {
+      callbacks.onThinking?.(event.data);
+      return accumulated;
+    }
+
     case 'done': {
       return accumulated;
     }
@@ -254,6 +292,9 @@ export function useSSEStream() {
         onRewindPoint: (id) => callbacksRef.current?.onRewindPoint(id),
         onKeepAlive: () => callbacksRef.current?.onKeepAlive(),
         onError: (a) => callbacksRef.current?.onError(a),
+        onAgentStart: (info) => callbacksRef.current?.onAgentStart?.(info),
+        onAgentStop: (info) => callbacksRef.current?.onAgentStop?.(info),
+        onThinking: (delta) => callbacksRef.current?.onThinking?.(delta),
       };
 
       return consumeSSEStream(reader, proxied);

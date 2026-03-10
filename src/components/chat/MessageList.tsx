@@ -4,7 +4,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { useStickToBottomContext } from 'use-stick-to-bottom';
-import type { Message } from '@/types';
+import type { Message, AgentCallInfo } from '@/types';
 import {
   Conversation,
   ConversationContent,
@@ -163,6 +163,10 @@ interface MessageListProps {
   /** SDK rewind points — only emitted for visible prompt-level user messages (not tool results or auto-triggers), mapped by position */
   rewindPoints?: RewindPoint[];
   sessionId?: string;
+  /** Sub-agent invocations during the current stream */
+  agentCalls?: AgentCallInfo[];
+  /** Extended thinking content */
+  thinkingContent?: string;
 }
 
 export function MessageList({
@@ -179,6 +183,8 @@ export function MessageList({
   onLoadMore,
   rewindPoints = [],
   sessionId,
+  agentCalls,
+  thinkingContent,
 }: MessageListProps) {
   const { t } = useTranslation();
   // Scroll anchor: preserve position when older messages are prepended
@@ -264,6 +270,8 @@ export function MessageList({
             streamingToolOutput={streamingToolOutput}
             statusText={statusText}
             onForceStop={onForceStop}
+            agentCalls={agentCalls}
+            thinkingContent={thinkingContent}
           />
         )}
       </ConversationContent>

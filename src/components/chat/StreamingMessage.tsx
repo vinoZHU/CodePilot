@@ -9,10 +9,12 @@ import {
 } from '@/components/ai-elements/message';
 import { ToolActionsGroup } from '@/components/ai-elements/tool-actions-group';
 import { Shimmer } from '@/components/ai-elements/shimmer';
+import { ThinkingBlock } from './ThinkingBlock';
+import { AgentCallBlock } from './AgentCallBlock';
 import { ImageGenConfirmation } from './ImageGenConfirmation';
 import { BatchPlanInlinePreview } from './batch-image-gen/BatchPlanInlinePreview';
 import { PENDING_KEY, buildReferenceImages } from '@/lib/image-ref-store';
-import type { PlannerOutput } from '@/types';
+import type { PlannerOutput, AgentCallInfo } from '@/types';
 
 interface ImageGenRequest {
   prompt: string;
@@ -104,6 +106,10 @@ interface StreamingMessageProps {
   streamingToolOutput?: string;
   statusText?: string;
   onForceStop?: () => void;
+  /** Sub-agent invocations */
+  agentCalls?: AgentCallInfo[];
+  /** Extended thinking content */
+  thinkingContent?: string;
 }
 
 function ElapsedTimer() {
@@ -173,6 +179,8 @@ export function StreamingMessage({
   streamingToolOutput,
   statusText,
   onForceStop,
+  agentCalls,
+  thinkingContent,
 }: StreamingMessageProps) {
   const { t } = useTranslation();
   const runningTools = toolUses.filter(
@@ -200,6 +208,16 @@ export function StreamingMessage({
   return (
     <AIMessage from="assistant">
       <MessageContent>
+        {/* Extended thinking block */}
+        {thinkingContent && (
+          <ThinkingBlock content={thinkingContent} isStreaming={isStreaming} />
+        )}
+
+        {/* Sub-agent calls */}
+        {agentCalls && agentCalls.length > 0 && (
+          <AgentCallBlock agentCalls={agentCalls} isStreaming={isStreaming} />
+        )}
+
         {/* Tool calls — compact collapsible group */}
         {toolUses.length > 0 && (
           <ToolActionsGroup

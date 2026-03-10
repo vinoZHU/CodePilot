@@ -368,6 +368,9 @@ export type SSEEventType =
   | 'task_update'        // SDK TodoWrite task sync
   | 'keep_alive'         // SDK keep-alive heartbeat (resets idle timer)
   | 'rewind_point'       // SDK user message with rewind checkpoint
+  | 'agent_start'        // sub-agent invocation started
+  | 'agent_stop'         // sub-agent invocation finished
+  | 'thinking'           // extended thinking content delta
   | 'done';              // stream complete
 
 export interface SSEEvent {
@@ -777,6 +780,22 @@ export interface ToolUseInfo {
 export interface ToolResultInfo {
   tool_use_id: string;
   content: string;
+  /** Elapsed time in milliseconds for this tool call */
+  duration_ms?: number;
+}
+
+/** Information about a sub-agent (Agent tool) invocation */
+export interface AgentCallInfo {
+  /** Unique ID for this agent invocation */
+  agent_id: string;
+  /** Agent type / name (e.g. "claude-code-guide") */
+  agent_type: string;
+  /** Timestamp when the agent started (ms) */
+  started_at: number;
+  /** Timestamp when the agent finished (ms), undefined while still running */
+  finished_at?: number;
+  /** Last assistant message produced by the sub-agent */
+  last_message?: string;
 }
 
 export type StreamPhase = 'active' | 'completed' | 'error' | 'stopped';
@@ -797,6 +816,10 @@ export interface SessionStreamSnapshot {
   error: string | null;
   /** Final message content built at stream completion for ChatView to consume */
   finalMessageContent: string | null;
+  /** Sub-agent invocations during this stream */
+  agentCalls?: AgentCallInfo[];
+  /** Accumulated extended thinking content */
+  thinkingContent?: string;
 }
 
 export interface StreamEvent {
