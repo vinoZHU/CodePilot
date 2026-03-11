@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   Message as AIMessage,
@@ -110,19 +110,21 @@ interface StreamingMessageProps {
   agentCalls?: AgentCallInfo[];
   /** Extended thinking content */
   thinkingContent?: string;
+  /** Stream start timestamp (ms) — used to keep ElapsedTimer accurate across session switches */
+  startedAt?: number;
 }
 
-function ElapsedTimer() {
-  const [elapsed, setElapsed] = useState(0);
-  const startRef = useRef(0);
+function ElapsedTimer({ startedAt }: { startedAt?: number }) {
+  const [elapsed, setElapsed] = useState(() =>
+    startedAt ? Math.floor((Date.now() - startedAt) / 1000) : 0
+  );
 
   useEffect(() => {
-    startRef.current = Date.now();
     const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+      setElapsed(Math.floor((Date.now() - (startedAt ?? Date.now())) / 1000));
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [startedAt]);
 
   const mins = Math.floor(elapsed / 60);
   const secs = elapsed % 60;
@@ -134,7 +136,7 @@ function ElapsedTimer() {
   );
 }
 
-function StreamingStatusBar({ statusText, onForceStop }: { statusText?: string; onForceStop?: () => void }) {
+function StreamingStatusBar({ statusText, onForceStop, startedAt }: { statusText?: string; onForceStop?: () => void; startedAt?: number }) {
   const displayText = statusText || 'Thinking';
 
   // Parse elapsed seconds from statusText like "Running bash... (45s)"
@@ -157,7 +159,7 @@ function StreamingStatusBar({ statusText, onForceStop }: { statusText?: string; 
         )}
       </div>
       <span className="text-muted-foreground/50">|</span>
-      <ElapsedTimer />
+      <ElapsedTimer startedAt={startedAt} />
       {isCritical && onForceStop && (
         <button
           type="button"
@@ -181,6 +183,7 @@ export function StreamingMessage({
   onForceStop,
   agentCalls,
   thinkingContent,
+  startedAt,
 }: StreamingMessageProps) {
   const { t } = useTranslation();
   const runningTools = toolUses.filter(
@@ -299,7 +302,7 @@ export function StreamingMessage({
         )}
 
         {/* Status bar during streaming */}
-        {isStreaming && <StreamingStatusBar statusText={statusText || getRunningCommandSummary()} onForceStop={onForceStop} />}
+        {isStreaming && <StreamingStatusBar statusText={statusText || getRunningCommandSummary()} onForceStop={onForceStop} startedAt={startedAt} />}
       </MessageContent>
     </AIMessage>
   );

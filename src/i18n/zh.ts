@@ -44,6 +44,7 @@ const zh: Record<TranslationKey, string> = {
   'messageInput.modeCode': '代码',
   'messageInput.modePlan': '计划',
   'messageInput.aiSuggested': 'AI 推荐',
+  'messageInput.noCommandsFound': '未找到匹配的命令',
 
   // ── Streaming message ───────────────────────────────────────
   'streaming.thinking': '思考中...',

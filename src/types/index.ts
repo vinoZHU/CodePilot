@@ -863,4 +863,6 @@ export interface ClaudeStreamOptions {
   enableFileCheckpointing?: boolean;
   /** When true, this is an auto-trigger turn (invisible to user) — skip rewind point emission */
   autoTrigger?: boolean;
+  /** Extra directories the Claude SDK should have access to (in addition to workingDirectory) */
+  additionalDirectories?: string[];
 }

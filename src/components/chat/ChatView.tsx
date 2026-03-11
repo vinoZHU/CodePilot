@@ -104,6 +104,7 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
   const permissionResolved = streamSnapshot?.permissionResolved ?? null;
   const agentCalls = streamSnapshot?.agentCalls;
   const thinkingContent = streamSnapshot?.thinkingContent;
+  const startedAt = streamSnapshot?.startedAt;
   const rewindPoints = getRewindPoints(sessionId);
 
   // Pending image generation notices — flushed into the next user message so the LLM knows about generated images
@@ -766,6 +767,7 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
         sessionId={sessionId}
         agentCalls={agentCalls}
         thinkingContent={thinkingContent}
+        startedAt={startedAt}
       />
       {/* Permission prompt — rendered outside MessageList so it's always visible at bottom */}
       <PermissionPrompt

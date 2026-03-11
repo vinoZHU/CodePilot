@@ -1008,7 +1008,7 @@ export function MessageInput({
       <div className="mx-auto">
         <div className="relative">
           {/* Popover */}
-          {popoverMode && (allDisplayedItems.length > 0 || aiSearchLoading) && (() => {
+          {popoverMode && (popoverMode === 'skill' || allDisplayedItems.length > 0 || aiSearchLoading) && (() => {
             const builtInItems = filteredItems.filter(item => item.builtIn);
             const projectItems = filteredItems.filter(item => !item.builtIn && item.source === 'project');
             const skillItems = filteredItems.filter(item => !item.builtIn && item.source !== 'project');
@@ -1152,6 +1152,12 @@ export function MessageInput({
                             return renderItem(item, idx);
                           })}
                         </>
+                      )}
+                      {/* Empty state — shown when nothing matches, keeps popover mounted so focus isn't lost */}
+                      {allDisplayedItems.length === 0 && !aiSearchLoading && popoverFilter.length > 0 && (
+                        <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                          {t('messageInput.noCommandsFound')}
+                        </div>
                       )}
                     </>
                   )}

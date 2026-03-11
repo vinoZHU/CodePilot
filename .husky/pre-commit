@@ -1,3 +1,5 @@
 npx lint-staged
 npx tsc --noEmit
+npx tsx --test src/__tests__/unit/*.test.ts
+
 

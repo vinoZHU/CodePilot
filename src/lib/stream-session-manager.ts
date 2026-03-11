@@ -88,6 +88,7 @@ export interface StartStreamParams {
 
 const GLOBAL_KEY = '__streamSessionManager__' as const;
 const LISTENERS_KEY = '__streamSessionListeners__' as const;
+const ADD_DIRS_KEY = '__additionalDirs__' as const;
 const STREAM_IDLE_TIMEOUT_MS = 330_000;
 const GC_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -104,6 +105,18 @@ function getListenersMap(): Map<string, Set<StreamEventListener>> {
     (globalThis as Record<string, unknown>)[LISTENERS_KEY] = new Map<string, Set<StreamEventListener>>();
   }
   return (globalThis as Record<string, unknown>)[LISTENERS_KEY] as Map<string, Set<StreamEventListener>>;
+}
+
+/** Per-session additional directories — persists across stream lifecycle for /add-dir support */
+function getAdditionalDirsMap(): Map<string, string[]> {
+  if (!(globalThis as Record<string, unknown>)[ADD_DIRS_KEY]) {
+    (globalThis as Record<string, unknown>)[ADD_DIRS_KEY] = new Map<string, string[]>();
+  }
+  return (globalThis as Record<string, unknown>)[ADD_DIRS_KEY] as Map<string, string[]>;
+}
+
+export function getAdditionalDirectories(sessionId: string): string[] {
+  return getAdditionalDirsMap().get(sessionId) ?? [];
 }
 
 // ==========================================
@@ -244,6 +257,32 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
     effectiveContent = `${notices}\n\n---\n\n${params.content}`;
   }
 
+  // Intercept /add-dir command — handled client-side, not sent to SDK
+  const addDirMatch = effectiveContent.trim().match(/^\/add-dir\s+(.+)$/);
+  if (addDirMatch) {
+    const dirPath = addDirMatch[1].trim();
+    const dirsMap = getAdditionalDirsMap();
+    const existing = dirsMap.get(params.sessionId) ?? [];
+    if (!existing.includes(dirPath)) {
+      dirsMap.set(params.sessionId, [...existing, dirPath]);
+    }
+    const allDirs = dirsMap.get(params.sessionId)!;
+    const dirList = allDirs.map(d => `- \`${d}\``).join('\n');
+    stream.snapshot = {
+      ...buildSnapshot(stream),
+      phase: 'completed',
+      completedAt: Date.now(),
+      finalMessageContent: `✅ 已将目录添加到工作区：\`${dirPath}\`\n\n当前已添加目录：\n${dirList}`,
+      statusText: undefined,
+      pendingPermission: null,
+      permissionResolved: null,
+    };
+    cleanupTimers(stream);
+    emit(stream, 'completed');
+    scheduleGC(stream);
+    return;
+  }
+
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
@@ -259,6 +298,9 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
         ...(params.autoTrigger ? { autoTrigger: true } : {}),
         ...(params.effort ? { effort: params.effort } : {}),
         ...(params.thinking ? { thinking: params.thinking } : {}),
+        ...(getAdditionalDirectories(params.sessionId).length > 0
+          ? { additionalDirectories: getAdditionalDirectories(params.sessionId) }
+          : {}),
       }),
       signal: stream.abortController.signal,
     });

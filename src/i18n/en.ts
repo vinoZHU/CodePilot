@@ -47,6 +47,7 @@ const en = {
   'messageInput.modeCode': 'Code',
   'messageInput.modePlan': 'Plan',
   'messageInput.aiSuggested': 'AI Suggested',
+  'messageInput.noCommandsFound': 'No matching commands',
 
   // ── Streaming message ───────────────────────────────────────
   'streaming.thinking': 'Thinking...',

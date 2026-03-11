@@ -291,6 +291,7 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
     agent,
     enableFileCheckpointing,
     autoTrigger,
+    additionalDirectories,
   } = options;
 
   return new ReadableStream<string>({
@@ -458,6 +459,9 @@ export function streamClaude(options: ClaudeStreamOptions): ReadableStream<strin
         }
         if (enableFileCheckpointing) {
           queryOptions.enableFileCheckpointing = true;
+        }
+        if (additionalDirectories && additionalDirectories.length > 0) {
+          queryOptions.additionalDirectories = additionalDirectories;
         }
 
         // Resume session if we have an SDK session ID from a previous conversation turn.

@@ -167,6 +167,8 @@ interface MessageListProps {
   agentCalls?: AgentCallInfo[];
   /** Extended thinking content */
   thinkingContent?: string;
+  /** Stream start timestamp (ms) — used to keep ElapsedTimer accurate across session switches */
+  startedAt?: number;
 }
 
 export function MessageList({
@@ -185,6 +187,7 @@ export function MessageList({
   sessionId,
   agentCalls,
   thinkingContent,
+  startedAt,
 }: MessageListProps) {
   const { t } = useTranslation();
   // Scroll anchor: preserve position when older messages are prepended
@@ -272,6 +275,7 @@ export function MessageList({
             onForceStop={onForceStop}
             agentCalls={agentCalls}
             thinkingContent={thinkingContent}
+            startedAt={startedAt}
           />
         )}
       </ConversationContent>
